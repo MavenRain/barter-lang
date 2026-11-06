@@ -42,7 +42,7 @@ Section 9 gives the request of the USER, verbatim.
 | Selective decryption | Threshold decryption of the settled fill only. An unfilled intent is never opened. |
 | Intent signature (ecrecover) | An owner key and a signature over the intent commitment. |
 | Nonce freshness | A nullifier set replayed from the log. |
-| `ZKProof` | A T2 relation, or t attestations of correct evaluation (PLAN Q-S0-9). |
+| `ZKProof` | A T2 relation in Noir, checked in the module (PLAN Q-S0-6 (a), Q-S0-17 (b)). |
 | Block progress, the interval `I` | Log height, in a decay `Window`. No wall clock. |
 | Reclaim path (constant path) | An `Unfilled` intent expires at its deadline height. Nothing moves. |
 
@@ -65,9 +65,10 @@ Section 9 gives the request of the USER, verbatim.
 | `Sealed A` | A commitment, an FHE ciphertext or MPC shares that carry an `A`. |
 | `Statement`, `Certificate` | A statement over the log, and t of n committee signatures on it. |
 | `Verdict A` | `accept A` or `reject Reason`. |
-| `Params` | The governed parameters and the amendment rule as data (section 5). |
+| `Params` | The governed parameters, the `langc serve` price list and the amendment rule as data (section 5). |
 | `Amendment`, `Ballot` | A proposed new `Params`, and a member vote on it. |
 | `Log` | The certified, height-ordered list of entries. |
+| `Word` | A wrapping 32-bit word for the crypto prelude only (PLAN Q-S0-17 (b)). A user program that names it is refused. |
 
 ## 4. Operations (draft)
 
@@ -99,12 +100,17 @@ with public scalars, so T3 and T4 evaluate the test without `bind`.
 
 ## 5. The governance layer
 
-`Params` holds the swap parameters (token pairs, decay window bounds, fee,
-deadlines) and the amendment rule as data in a closed form: the committee
-set, n, t, the quorum and the delay in heights. `amend` reads the rule that
-it can change. A new rule applies from height h + 1, not before. One static
-floor is in the type of `Params`: t >= t_min. No amendment can put the
-threshold below t_min (PLAN Q-S0-6).
+`Params` holds the swap parameters (token pairs, decay window bounds,
+deadlines), the price list of `langc serve` and the amendment rule as data
+in a closed form: the committee set, n, t, the quorum and the delay in
+heights. There is no fee in v1 (PLAN Q-S0-10 (a)). `amend` reads the rule
+that it can change, and it can change the price list like any other field
+(PLAN Q-S0-11 (b)). A new rule or a new price applies from height h + 1,
+not before. Two static bounds are in the type of `Params`: t >= t_min, and
+each price is in the range $0.01 to $0.20 (section 9; PLAN Q-S1-6 (a)).
+No amendment can put the threshold below t_min (PLAN Q-S0-9 (a)). An
+amendment with a price outside the range is `reject bad_price`. The
+genesis price list is the tiered list of PLAN Q-S0-21 (a).
 
 Self-reference is the orbit-lang fixed point: replay of the log with the
 rule in force at each height gives the same `Params` as a fold of `amend`
@@ -138,13 +144,19 @@ All four are C99 that TinyCC builds.
    barter-lang (check, fmt, explain, list-base, show-law).
 3. `langc serve`: the same tools over HTTP behind x402, plus MCP streamable
    HTTP at `/mcp`. It links libcurl for the facilitator calls and runs
-   behind a TLS proxy.
+   behind a TLS proxy. It asks a local `barterd` for the price list at the
+   log head (PLAN Q-S1-7 (a)).
 4. `barterd`: the T1 host. It runs a compiled module on intents, quotes,
-   certificates and logs.
+   certificates and logs. It has no crypto code: the module checks the
+   proofs, the shares, the signatures and the MPC outputs (PLAN Q-S0-17
+   (b), Q-S1-1 (a)). In member mode it carries the WRK messages of one
+   member over TCP links and gives the module a 32-byte OS seed for each
+   run (PLAN Q-S1-2 to Q-S1-4).
 
 ## 8. Not in v1
 
 - Code as data in an amendment (new barter-lang code in `Params`).
+- A fee (PLAN Q-S0-10 (a)).
 - CKKS (approximate arithmetic).
 - On-chain settlement (that is intent-lang).
 - A wall clock.
