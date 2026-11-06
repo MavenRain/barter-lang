@@ -1,0 +1,8 @@
+-- The Enc monad of the R1 table (S4, PLAN section 3). A program seals a
+-- value, maps over it and binds it. It cannot open it: only a law can
+-- name open, and a law has no run time.
+def sealedOne : Enc Size := seal Size (szS sz0)
+def sealedTwo : Enc Size := encMap Size Size (fun (n : Size) => szS n) sealedOne
+def boundTwo : Enc Size := encBind Size Size sealedOne (fun (n : Size) => seal Size (szS n))
+def openTwo : Path Size (open Size sealedTwo) (szS (szS sz0)) := refl
+def mapIsBind : Path (Enc Size) sealedTwo boundTwo := refl

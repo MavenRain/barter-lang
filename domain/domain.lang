@@ -1,6 +1,7 @@
 -- The domain file. The kernel port (S2, from ratify-lang a2322ef and
 -- permit-lang 3d47120) removes the kit sample and adds the kernel prelude.
--- The barter-lang domain words come in a later slice (S5).
+-- The R1 formers Enc and open are at the end (S4). The barter-lang
+-- domain words come in a later slice (S5).
 -- Each family, constructor, field and def name here becomes a core name
 -- (rule R4). Only this file can declare a family (rule R1).
 
@@ -272,3 +273,27 @@ family Signal := sigQuiet | sigLoud (loudLevel : Nat)
 and Window := winOpen | winShut (shutFor : Nat)
 family Hop := hopEnd | hopNext (nextEcho : Echo)
 and Echo := echoBack (backHop : Hop)
+-- The R1 formers (S4, PLAN section 3, Q-S0-3 (a)). Sealed is the carrier
+-- of the identity cell monad Enc of the design (design sec 3): seal is the
+-- unit, encBind is the bind and encMap is the map. The family is sealed
+-- (rule O7): a program can make a Sealed value, but an elim, a fold or a
+-- projection of Sealed in a program def that is not a law gives
+-- REFUSE_LAW. open is the law-only monad morphism Enc -> Id (the design
+-- decrypt): a program can name open only in a law. In a later slice only
+-- settle and the tally (domain words) call it, after a certificate. The
+-- unit law and the bind law of open (law S6) are paths by refl and elim.
+sealed family Sealed (A : Type 0) := seal (sealOf : A)
+def Enc : Type 0 -> Type 0 := fun (A : Type 0) => Sealed A
+def encBind : (A : Type 0) -> (B : Type 0) -> Sealed A -> (A -> Sealed B) -> Sealed B :=
+  fun (A : Type 0) (B : Type 0) (m : Sealed A) (f : A -> Sealed B) =>
+    elim (fun (s : Sealed A) => Sealed B) (fun (a : A) => f a) m
+def encMap : (A : Type 0) -> (B : Type 0) -> (A -> B) -> Sealed A -> Sealed B :=
+  fun (A : Type 0) (B : Type 0) (g : A -> B) (m : Sealed A) =>
+    encBind A B m (fun (a : A) => seal B (g a))
+law def open : (A : Type 0) -> Sealed A -> A :=
+  fun (A : Type 0) (m : Sealed A) => elim (fun (s : Sealed A) => A) (fun (a : A) => a) m
+law def openSeal : (A : Type 0) -> (a : A) -> Path A (open A (seal A a)) a :=
+  fun (A : Type 0) (a : A) => refl
+law def openBind : (A : Type 0) -> (B : Type 0) -> (m : Sealed A) -> (f : A -> Sealed B) -> Path B (open B (encBind A B m f)) (open B (f (open A m))) :=
+  fun (A : Type 0) (B : Type 0) (m : Sealed A) (f : A -> Sealed B) =>
+    elim (fun (s : Sealed A) => Path B (open B (encBind A B s f)) (open B (f (open A s)))) (fun (a : A) => refl) m

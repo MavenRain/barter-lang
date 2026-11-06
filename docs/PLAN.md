@@ -17,13 +17,13 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 to 1.5 list the questions for the USER,
+`design/DESIGN.md`. Sections 1.2 to 1.6 list the questions for the USER,
 and section 1.1 has the rulings.
 
-Status: S3 DONE (2026-11-06): the differential fails on a trap (R0), and
-the ported comments cite no plan item of another repo. The total
-arithmetic of gavel-lang 86c2f30 came with the S2 port (section 2).
-Section 1.5 has the S3 question. Next: S4 (R1 formers, `Enc` and `open`).
+Status: S4 DONE (2026-11-06): the R1 former `Enc` (carrier `Sealed`) and
+the law-only `open` are in the domain over rule O7 of the kernel (section
+3). Q-S3-1 is ruled (a). Section 1.6 has the S4 questions. Next: S5 (base
+types of design sec 3).
 
 ## 1. Rulings and questions
 
@@ -83,6 +83,7 @@ Section 1.5 has the S3 question. Next: S4 (R1 formers, `Enc` and `open`).
 | 2026-11-06 | Q-S2-2 "(a) Keep ported row (Recommended)": the kit row `pick 2 4 9` wants 4, and `flag_norm` stays. | USER, S3 |
 | 2026-11-06 | Q-S2-3 "(a) Rewrite in S3 (Recommended)": S3 rewrites the ported plan citations of ratify-lang and permit-lang to text that names no plan item, or to the items of this plan. | USER, S3 |
 | 2026-11-06 | Q-S2-4 "(a) Keep until S5 (Recommended)": the QIIT test family `Charter`, `Ratified`, `ratify` and `adopt` stays until S5 changes the domain. | USER, S3 |
+| 2026-11-06 | Q-S3-1 "(a) Nat stays (Recommended)": the Nat words of the port stay kernel words for the prelude and the tests. S5 gives `Amount` and `Height` their own words (compare, select, add, a product by a public scalar), each with a static bound obligation that the checker discharges (OI-7). | USER, S4 |
 
 The seed is `bin/new-lang.sh barter-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -291,7 +292,39 @@ as kernel words for the prelude and the tests. S5 gives `Amount` and
 scalar), each with a static bound obligation that the checker discharges
 (OI-7) (Recommended). (b) S4 takes `natSub`, `natDiv` and `natMod` out of
 the guest scope and adds a product by a public scalar with a static bound
-on Nat.
+on Nat. RULED (a).
+
+### 1.6 Questions for the USER (S4)
+
+Q-S4-1 The refusal codes of S4. Sections 3 and 7 name `REFUSE_FORMER`,
+`REFUSE_UNSEAL` and `REFUSE_OPEN`. The kernel of the port gives
+`REFUSE_CELL` for a former outside the R1 table. It gives `REFUSE_LAW`
+for an elim of `Sealed`, and for `open`, in a program def that is not a
+law (rule O7). S4 keeps the kernel codes. (a) S8 (the refusal codes) maps
+the kernel codes to the section 7 codes: `REFUSE_CELL` to
+`REFUSE_FORMER`, and `REFUSE_LAW` on a sealed eliminator or on `open` to
+`REFUSE_UNSEAL` or `REFUSE_OPEN` (Recommended). (b) S5 changes the codes
+before the base types come.
+
+Q-S4-2 The name `Outcome`. The DAO signature slot of the kernel is
+`Outcome` (`SIGNATURE` in `src/front/check.c`). The design sum `Outcome`
+needs the name. gavel-lang b2da56f changes the slot name to `DaoOutcome`
+(3 sites in the checker, 72 fixture lines). (a) S6 takes the new name with
+the sums `Outcome` and `Verdict` (Recommended). (b) S5 takes the new name.
+
+Q-S4-3 `open` in a law. `open` is law-only: a program def that names it
+must be a law, and a law has no run time. Section 7 says that
+`REFUSE_OPEN` is "`open` outside `settle` or the tally". (a) A program law
+can name `open` (the law `openTwo` of `examples/enc.lang`). `REFUSE_OPEN`
+is `open` in a def that is not a law, `settle` or the tally
+(Recommended). (b) Only the domain laws can name `open`, and the checker
+refuses a program law that names it.
+
+Q-S4-4 The parameter of `Sealed`. S4 declares
+`sealed family Sealed (A : Type 0)`, so `Enc` takes any type of universe
+0. The gavel-lang R1 table admits a base type only. (a) S5 limits the
+parameter of `Sealed` to the base types of design sec 3 (Recommended).
+(b) Keep any type of universe 0.
 
 ## 2. The reading of R0: no runtime error
 
@@ -315,7 +348,8 @@ total, and every failure in the domain is a value.
   bound obligation that the checker discharges (OI-7). The S2 port has
   the total Nat words of gavel-lang 86c2f30: the src tree of gavel-lang
   86c2f30 is equal to the src tree of this port, so S3 ports no C code.
-  Q-S3-1 asks where the Q-S0-2 restriction applies.
+  Q-S3-1 (a): the Nat words stay kernel words, and S5 gives `Amount`
+  and `Height` their own words.
 - Host input that does not decode is a `reject`, never a trap (permit-lang
   `test/notraptool.c` precedent).
 - S3 changed the kit row "a trap is equal to a trap" (Q-S0-33 (a)): a
@@ -336,6 +370,15 @@ lines 88 to 119) where the words are the same (Q-S0-3).
   `settle` and the tally call it, after a certificate.
 - `Verdict` and `Outcome` are sums, not formers.
 - A former outside the R1 table gives `REFUSE_FORMER`.
+
+S4 (2026-11-06) builds `Enc` and `open` in `domain/domain.lang` over rule
+O7 of the kernel: `sealed family Sealed (A : Type 0) := seal (sealOf : A)`,
+`Enc A` is `Sealed A`, `encBind` and `encMap` are the bind and the map,
+`open` is a `law def`, and the laws `openSeal` and `openBind` are paths. A
+program def that eliminates `Sealed` or names `open` and is not a law
+gives `REFUSE_LAW` (Q-S4-1). The rows: `examples/enc.lang`,
+`test/check/unseal-wrong.lang`, `test/check/open-wrong.lang` and two eval
+rows.
 
 ## 4. The minimal base signature (R2)
 
@@ -551,8 +594,8 @@ gate; logs that are kept come from a serial run.
 | S1 | The USER rules sections 1.2 and 1.3; the rulings are in section 1.1 | DONE (2026-11-06) |
 | S2 | Port the ratify-lang kernel at a2322ef (Q-S0-18 (a)); survey first | DONE (2026-11-06) |
 | S3 | Total arithmetic, the trap row (Q-S0-2, Q-S0-33) | DONE (2026-11-06) |
-| S4 | R1 formers, `Enc` and `open` (Q-S0-3) | NEXT |
-| S5 | Base types of design sec 3 | |
+| S4 | R1 formers, `Enc` and `open` (Q-S0-3) | DONE (2026-11-06) |
+| S5 | Base types of design sec 3 | NEXT |
 | S6 | Swap operations and laws S1, S2, S3, S5, N1 | |
 | S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3 | |
 | S8 | Refusal codes, `check --json`, `langc fmt` | |

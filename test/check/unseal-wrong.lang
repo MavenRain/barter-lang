@@ -1,0 +1,4 @@
+-- REFUSE_LAW (S4, rule O7): an elim of the sealed family Sealed in a
+-- program def that is not a law.
+def peek : Enc Size -> Size :=
+  fun (m : Enc Size) => elim (fun (s : Sealed Size) => Size) (fun (n : Size) => n) m

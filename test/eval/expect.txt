@@ -77,3 +77,5 @@ cocell dupAt1 => szS sz0
 oppos lenEmpty => 0
 oppos lenOne => 1
 oppos lenTwo => 2
+enc sealedTwo => seal Size (szS (szS sz0))
+enc boundTwo => seal Size (szS (szS sz0))

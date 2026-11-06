@@ -1,0 +1,3 @@
+-- REFUSE_LAW (S4, PLAN section 3): open is law-only, so a program def
+-- that is not a law cannot name it.
+def leak : Enc Size -> Size := fun (m : Enc Size) => open Size m
