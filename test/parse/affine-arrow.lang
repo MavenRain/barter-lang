@@ -1,0 +1,2 @@
+-- S2: the affine arrow is not in barter-lang (no affine layer, Q-S0-18 (a)).
+def f : (x : S1) -o S1 := fun (x : S1) => x

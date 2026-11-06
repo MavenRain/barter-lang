@@ -17,11 +17,12 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 and 1.3 list the questions for the USER,
-and section 1.1 has the rulings.
+`design/DESIGN.md`. Sections 1.2, 1.3 and 1.4 list the questions for the
+USER, and section 1.1 has the rulings.
 
-Status: S1 DONE (2026-11-06): the USER ruled sections 1.2 and 1.3; the
-rulings are in section 1.1. Next: S2 (port the kernel).
+Status: S2 DONE (2026-11-06): the kernel of ratify-lang a2322ef is in the
+repo (section 8.1). Section 1.4 has the S2 questions. Next: S3 (total
+arithmetic, the trap row).
 
 ## 1. Rulings and questions
 
@@ -239,6 +240,35 @@ Option (a) is the recommendation, cited as in section 1.2.
   itself. (c) A deploy file that the USER refreshes from `barterd`. RULED
   (a).
 
+### 1.4 Questions for the USER (S2)
+
+Q-S2-1 The cut of the port. S2 takes the change of ratify-lang
+55310c5..71f2c22 on the kernel paths: the Cubical TT kernel (ratify-lang
+S2) and R0 with the no-trap Wasm writer (ratify-lang S3). The kit lowering
+does not match the new core, so the kit gate rows need the writer. S2 takes
+nothing from 71f2c22..a2322ef (ratify-lang S4 to S8: the committee, rule,
+policy and log families, the crypto words, `src/crypto`, the certificate
+check). (a) Keep this cut (Recommended). (b) Take only ratify-lang S2
+(a46d5df). Then `langc build` refuses until S3, and the gate loses the IR,
+Wasm and differential rows until S3.
+
+Q-S2-2 The kit row `pick 2 4 9` wanted a trap. The ported writer sets a
+Flag argument of 2 or more to 1 (`flag_norm` in `src/wasm.c`), so the row
+now wants 4. (a) Keep the ported row (Recommended). (b) Restore the kit
+trap row until S3, and take `flag_norm` in S3.
+
+Q-S2-3 Ported comments and fixture heads cite the plan items of ratify-lang
+and permit-lang (25 lines in 12 files, for example `Q-S3-3 (b)` and
+`OI-12`). These numbers name other items in this plan. (a) Rewrite them in
+S3 with the trap row (Recommended). (b) Rewrite them at S21. (c) Keep them
+as source citations.
+
+Q-S2-4 The port replaces the kit sample with the 30 kernel examples (the
+kit sample moves to `examples/seed/inventory.lang`). The kernel prelude has
+the permit-lang QIIT test family `Charter`, `Ratified`, `ratify` and
+`adopt`. These names are kernel test data, not ratify-lang governance. (a)
+Keep them until S5 changes the domain (Recommended). (b) Rename them now.
+
 ## 2. The reading of R0: no runtime error
 
 R0 says that langc accepts no program that can lead to a runtime error.
@@ -350,6 +380,11 @@ check --json` gives each with a fix hint.
 S2 ports the ratify-lang Cubical TT kernel at a2322ef (Q-S0-18 (a)) onto
 the tcc-wasm kit. Survey first: SAME, CHANGED, SOURCE-ONLY. S3 makes
 arithmetic total (Q-S0-2) and changes the trap row (Q-S0-33).
+
+S2 (DONE) took the change of ratify-lang 55310c5..71f2c22 on the kernel
+paths: the kernel, R0 and the no-trap Wasm writer (Q-S2-1). The gate keeps
+the kit row "a trap is equal to a trap". The host crypto ABI and
+`src/crypto` of ratify-lang are not in the port (Q-S0-17 (b)).
 
 ### 8.2 The five targets
 
@@ -485,8 +520,8 @@ gate; logs that are kept come from a serial run.
 |---|---|---|
 | S0 | Seed from the kit, design, this plan, README and AGENTS drafts | DONE |
 | S1 | The USER rules sections 1.2 and 1.3; the rulings are in section 1.1 | DONE (2026-11-06) |
-| S2 | Port the ratify-lang kernel at a2322ef (Q-S0-18 (a)); survey first | NEXT |
-| S3 | Total arithmetic, the trap row (Q-S0-2, Q-S0-33) | |
+| S2 | Port the ratify-lang kernel at a2322ef (Q-S0-18 (a)); survey first | DONE (2026-11-06) |
+| S3 | Total arithmetic, the trap row (Q-S0-2, Q-S0-33) | NEXT |
 | S4 | R1 formers, `Enc` and `open` (Q-S0-3) | |
 | S5 | Base types of design sec 3 | |
 | S6 | Swap operations and laws S1, S2, S3, S5, N1 | |

@@ -1,0 +1,2 @@
+-- S2: the Budget resource sort is not in barter-lang (no affine layer, Q-S0-18 (a)).
+def b : (x : Budget) -> Budget := fun (x : Budget) => x

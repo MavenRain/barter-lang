@@ -1,0 +1,2 @@
+-- S2: unpack is not in barter-lang (no affine layer, Q-S0-18 (a)).
+def h : (x : S1) -> S1 := fun (x : S1) => unpack x
