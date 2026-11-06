@@ -1,4 +1,4 @@
--- The free monoid of domain/domain.lang (S3, USER ruling Q-S3-5 (a), rule
+-- The free monoid of domain/domain.lang (rule
 -- R1): a guest program uses FreeMon in place of the cons list List, which
 -- is kit only (a guest List gives REFUSE_CELL).
 def freeOne : Size := szS sz0

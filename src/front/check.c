@@ -65,7 +65,7 @@ typedef struct {
 typedef enum {
   VIS_GUEST,
   VIS_INTERNAL,
-  /* A cons-list name (S3, USER ruling Q-S3-5 (a), rule R1): the kit and
+  /* A cons-list name (rule R1): the kit and
      the trusted scope use it (the host ABI); a guest use gives REFUSE_CELL. */
   VIS_CELL
 } Vis;
@@ -2160,7 +2160,7 @@ static const Core *rule_prim(Call *k, Op arg) {
 
 static uint32_t find_family(const Machine *m, const char *name);
 
-/* len A r (S3, USER ruling Q-S3-3 (a)): the op count of the trace
+/* len A r: the op count of the trace
    r : FreeMon A, a Nat (an OpPos). A C builtin: the domain cannot prove
    the Nat monoid laws that fmFold needs (S3 survey section 7). */
 static const Core *rule_len(Call *k) {
@@ -3947,7 +3947,7 @@ static int kernel_sig(Checker *c, const Decl *d) {
 
 static uint32_t find_family(const Machine *m, const char *name);
 
-/* Rule O7 (S5, Q-S5-2 (a)). 1 if the core term T uses a law-only name: a
+/* The law-only rule. 1 if the core term T uses a law-only name: a
    law-only def, or an elim, a fold or a projection of a sealed family. The
    arguments of the type former TRUNC (Trunc1) are skipped: an end point
    under Trunc1 comes out only into a proposition. */

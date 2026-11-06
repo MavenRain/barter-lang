@@ -58,7 +58,7 @@ def sExtend : (A : Type 0) -> (B : Type 0) -> (Stream A -> B) -> Stream A -> Str
   fun (A : Type 0) => fun (B : Type 0) => fun (f : Stream A -> B) => sCorec B (Stream A) f (sTail A)
 def sDuplicate : (A : Type 0) -> Stream A -> Stream (Stream A) :=
   fun (A : Type 0) => sExtend A (Stream A) (fun (x : Stream A) => x)
--- The parity quotient of Size (S3, design C 2b, USER ruling Q-S3-8 (a)):
+-- The parity quotient of Size:
 -- sizeEven s is sz0 for an even s and szS sz0 for an odd s, and parityEq
 -- is a path from parityOf a to parityOf b when a and b have the same
 -- parity. The relation is in the field type, so Parity has no parameter.
@@ -70,9 +70,9 @@ family Parity := parityOf (parityAt : Size)
   | parityEq (parityA : Size) (parityB : Size) (parityR : Path Size (sizeEven parityA) (sizeEven parityB)) (i : I) [ ~i -> parityOf parityA, i -> parityOf parityB ]
   | paritySquash (parityFrom : Parity) (parityTo : Parity) (parityLeft : Path Parity parityFrom parityTo) (parityRight : Path Parity parityFrom parityTo) (i : I) (j : I)
     [ ~i -> parityLeft @ j, i -> parityRight @ j, ~j -> parityFrom, j -> parityTo ]
--- The empty family (S10 B1, USER ruling Q-S10-9 (a)): one constructor and
+-- The empty family: one constructor and
 -- no base case, so no closed value. The parser needs a constructor, so
--- Empty is not a family with no constructor (the Q-S10-4 (a) probe).
+-- Empty is not a family with no constructor.
 family Empty := emptyLoop (emptyOf : Empty)
 -- The bag (S3, design C section 3, rule R1): the free commutative monoid
 -- on A. bagOf is the generator, bagUnit the unit and bagOp the operation;
@@ -92,7 +92,7 @@ family Bag (A : Type 0) := bagOf (bagGen : A)
     [ ~i -> bagOp A (bagUnit A) unitX, i -> unitX ]
   | bagSquash (bagFrom : Bag A) (bagTo : Bag A) (bagLeft : Path (Bag A) bagFrom bagTo) (bagRight : Path (Bag A) bagFrom bagTo) (i : I) (j : I)
     [ ~i -> bagLeft @ j, i -> bagRight @ j, ~j -> bagFrom, j -> bagTo ]
--- The free monoid (S3, USER ruling Q-S3-5 (a), rule R1): the cell monad
+-- The free monoid (rule R1): the cell monad
 -- of the monoid signature, with the generator fmEta and a set squash. The
 -- cons list List is kit only (the host ABI); a guest List gives REFUSE_CELL,
 -- and a guest program uses FreeMon. The bind is the fold (fmFold).
@@ -127,7 +127,7 @@ def fmBind : (A : Type 0) -> (B : Type 0) -> (A -> FreeMon B) -> FreeMon A -> Fr
     (fun (x : FreeMon B) => fun (i : I) => fmUnitR B x i) k
 def fmMap : (A : Type 0) -> (B : Type 0) -> (A -> B) -> FreeMon A -> FreeMon B :=
   fun (A : Type 0) (B : Type 0) (f : A -> B) => fmBind A B (fun (a : A) => fmEta B (f a))
--- The trace position (S3, USER ruling Q-S3-3 (a)): a position is an op
+-- The trace position: a position is an op
 -- count. `len A r` is a C builtin (OP_FM_LEN): the domain cannot prove the
 -- Nat monoid laws that fmFold needs (S3 survey section 7).
 def OpPos : Type 0 := Nat
@@ -143,8 +143,8 @@ family Pos : Size -> Type 0 := posFirst (firstSize : Size) : Pos (szS firstSize)
 family Word : Size -> Type 0 := wordNil (nilSize : Size) : Word nilSize
   | wordSwap (wordAt : Size) (wordRest : Word (szS (szS wordAt))) : Word (szS (szS wordAt))
   | wordLift (liftSize : Size) (liftInner : Word liftSize) (liftRest : Word (szS liftSize)) : Word (szS liftSize)
--- The choice bags and the orbits at each size (S3, design C section 3,
--- USER ruling Q-S3-6 (a)). ChoiceBag is the old cons Bag at the choice
+-- The choice bags and the orbits at each size.
+-- ChoiceBag is the old cons Bag at the choice
 -- type Sum Unit Unit, and OrbitN n is the quotient of the configurations
 -- Pos n -> Sum Unit Unit by the word action. The two families have no
 -- parameter, so they are not type constructors (rule R1). sizePred gives
@@ -183,7 +183,7 @@ family OrbitN : Size -> Type 0 := orbitNOf (onSize : Size) (onOf : Pos onSize ->
 -- second adoption of the same rule is a path from the first. A squash at
 -- each sort in the form of Trunc0 squash0 makes each sort a set. Field
 -- names are global (rule R4), so each has the prefix of its constructor.
--- The rule type is Size (S3, USER ruling Q-S3-7 (a)): the block has no
+-- The rule type is Size: the block has no
 -- parameter, so it is not a type constructor (rule R1).
 family Charter := genesis
   | adopt (adoptBase : Charter) (adoptRule : Ratified adoptBase)

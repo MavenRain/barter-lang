@@ -17,12 +17,13 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2, 1.3 and 1.4 list the questions for the
-USER, and section 1.1 has the rulings.
+`design/DESIGN.md`. Sections 1.2 to 1.5 list the questions for the USER,
+and section 1.1 has the rulings.
 
-Status: S2 DONE (2026-11-06): the kernel of ratify-lang a2322ef is in the
-repo (section 8.1). Section 1.4 has the S2 questions. Next: S3 (total
-arithmetic, the trap row).
+Status: S3 DONE (2026-11-06): the differential fails on a trap (R0), and
+the ported comments cite no plan item of another repo. The total
+arithmetic of gavel-lang 86c2f30 came with the S2 port (section 2).
+Section 1.5 has the S3 question. Next: S4 (R1 formers, `Enc` and `open`).
 
 ## 1. Rulings and questions
 
@@ -77,6 +78,11 @@ arithmetic, the trap row).
 | 2026-11-06 | Q-S1-5 "(a) quorum-lang C oracle (Recommended)": quorum-lang `src/crypto` (8d1a113) is the reference of the prelude and a C oracle in the gate. Edits: section 4, 10, 11, 12 (S8b). | USER, S1 |
 | 2026-11-06 | Q-S1-6 "(a) Range $0.01-$0.20 (Recommended)": the Q-S0-21 list is the genesis value in `Params`; each price has a static range $0.01 to $0.20 in the type of `Params`; an amendment outside the range is `reject bad_price`, a ninth reason. Edits: section 2, 7 (`REFUSE_FLOOR`), 9, 10, 12 (S7); design sec 5. | USER, S1 |
 | 2026-11-06 | Q-S1-7 "(a) Ask local barterd (Recommended)": `langc serve` asks a local `barterd` for the price list at the log head, and the 402 body names that height. Edits: section 8.3, 8.4, 9 (USER steps), 10, 12 (S10, S16, the order), 13 (OI-18); design sec 7. | USER, S1 |
+| 2026-11-06 | S3 base: the USER commit df78228 (tree c42151a2) is the base of S3. It adds three changes to the S2 tree that was staged: the IR row covers all 30 examples, `lazy.lang` is an IR refusal, and `test/ir/spine.lang` has 13 boundary proofs. The gate counts on df78228 are the S2 counts, but `ir: 30 lowered` and `ir refusals: 6 checked`. | USER, S3 |
+| 2026-11-06 | Q-S2-1 "(a) Keep cut (Recommended)": S2 keeps the cut ratify-lang 55310c5..71f2c22 on the kernel paths. | USER, S3 |
+| 2026-11-06 | Q-S2-2 "(a) Keep ported row (Recommended)": the kit row `pick 2 4 9` wants 4, and `flag_norm` stays. | USER, S3 |
+| 2026-11-06 | Q-S2-3 "(a) Rewrite in S3 (Recommended)": S3 rewrites the ported plan citations of ratify-lang and permit-lang to text that names no plan item, or to the items of this plan. | USER, S3 |
+| 2026-11-06 | Q-S2-4 "(a) Keep until S5 (Recommended)": the QIIT test family `Charter`, `Ratified`, `ratify` and `adopt` stays until S5 changes the domain. | USER, S3 |
 
 The seed is `bin/new-lang.sh barter-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -250,24 +256,42 @@ nothing from 71f2c22..a2322ef (ratify-lang S4 to S8: the committee, rule,
 policy and log families, the crypto words, `src/crypto`, the certificate
 check). (a) Keep this cut (Recommended). (b) Take only ratify-lang S2
 (a46d5df). Then `langc build` refuses until S3, and the gate loses the IR,
-Wasm and differential rows until S3.
+Wasm and differential rows until S3. RULED (a).
 
 Q-S2-2 The kit row `pick 2 4 9` wanted a trap. The ported writer sets a
 Flag argument of 2 or more to 1 (`flag_norm` in `src/wasm.c`), so the row
 now wants 4. (a) Keep the ported row (Recommended). (b) Restore the kit
-trap row until S3, and take `flag_norm` in S3.
+trap row until S3, and take `flag_norm` in S3. RULED (a).
 
 Q-S2-3 Ported comments and fixture heads cite the plan items of ratify-lang
 and permit-lang (25 lines in 12 files, for example `Q-S3-3 (b)` and
 `OI-12`). These numbers name other items in this plan. (a) Rewrite them in
 S3 with the trap row (Recommended). (b) Rewrite them at S21. (c) Keep them
-as source citations.
+as source citations. RULED (a).
 
 Q-S2-4 The port replaces the kit sample with the 30 kernel examples (the
 kit sample moves to `examples/seed/inventory.lang`). The kernel prelude has
 the permit-lang QIIT test family `Charter`, `Ratified`, `ratify` and
 `adopt`. These names are kernel test data, not ratify-lang governance. (a)
 Keep them until S5 changes the domain (Recommended). (b) Rename them now.
+RULED (a).
+
+### 1.5 Questions for the USER (S3)
+
+Q-S3-1 Where the Q-S0-2 restriction applies. The port has these Nat words,
+each with the visibility `VIS_INTERNAL` in `src/front/check.c`: `natAdd`
+(it gives `Option Nat`, and an overflow is `none`), `natSub` (it gives 0
+when y is more than x), `natDiv` and `natMod` (each takes a NonZero
+divisor), `natEq` and `natLe`. There is no product word. Q-S0-2 (a) and
+section 2 ask for compare, select, add and a product by a public scalar,
+each with a static bound obligation, and for no division and no
+subtraction on `Amount` and `Height`. (a) Keep the Nat words of the port
+as kernel words for the prelude and the tests. S5 gives `Amount` and
+`Height` their own words (compare, select, add, a product by a public
+scalar), each with a static bound obligation that the checker discharges
+(OI-7) (Recommended). (b) S4 takes `natSub`, `natDiv` and `natMod` out of
+the guest scope and adds a product by a public scalar with a static bound
+on Nat.
 
 ## 2. The reading of R0: no runtime error
 
@@ -288,10 +312,15 @@ total, and every failure in the domain is a value.
   that does not check is a `reject`, never a trap.
 - Arithmetic on `Amount` and `Height` is total (Q-S0-2). No division and no
   subtraction. Each add and each product by a public scalar has a static
-  bound obligation that the checker discharges (OI-7).
+  bound obligation that the checker discharges (OI-7). The S2 port has
+  the total Nat words of gavel-lang 86c2f30: the src tree of gavel-lang
+  86c2f30 is equal to the src tree of this port, so S3 ports no C code.
+  Q-S3-1 asks where the Q-S0-2 restriction applies.
 - Host input that does not decode is a `reject`, never a trap (permit-lang
   `test/notraptool.c` precedent).
-- The kit row "a trap is equal to a trap" changes (Q-S0-33, OI-4).
+- S3 changed the kit row "a trap is equal to a trap" (Q-S0-33 (a)): a
+  `trap` line on either side of the differential is a FAIL
+  (`test/gate.sh`).
 
 ## 3. The reading of R1
 
@@ -521,8 +550,8 @@ gate; logs that are kept come from a serial run.
 | S0 | Seed from the kit, design, this plan, README and AGENTS drafts | DONE |
 | S1 | The USER rules sections 1.2 and 1.3; the rulings are in section 1.1 | DONE (2026-11-06) |
 | S2 | Port the ratify-lang kernel at a2322ef (Q-S0-18 (a)); survey first | DONE (2026-11-06) |
-| S3 | Total arithmetic, the trap row (Q-S0-2, Q-S0-33) | NEXT |
-| S4 | R1 formers, `Enc` and `open` (Q-S0-3) | |
+| S3 | Total arithmetic, the trap row (Q-S0-2, Q-S0-33) | DONE (2026-11-06) |
+| S4 | R1 formers, `Enc` and `open` (Q-S0-3) | NEXT |
 | S5 | Base types of design sec 3 | |
 | S6 | Swap operations and laws S1, S2, S3, S5, N1 | |
 | S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3 | |
@@ -556,7 +585,8 @@ and S14b. S9 needs S8b to S8d.
   routes. Check them against the x402 text in S16. Do not guess.
 - OI-2 The `server.json` schema of the MCP Registry. Check it in S17.
 - OI-3 The `funding.json` schema. Check it in S17.
-- OI-4 The kit row "a trap is equal to a trap" (Q-S0-33).
+- OI-4 The kit row "a trap is equal to a trap" (Q-S0-33). Closed at S3
+  (section 2).
 - OI-5 The facilitator URL and the payTo address are USER inputs. No
   default address in the repo.
 - OI-6 The decoy bundle: its size and the meaning of the sealed decoy

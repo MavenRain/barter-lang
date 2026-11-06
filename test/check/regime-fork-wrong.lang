@@ -76,7 +76,7 @@ def eqPhase : Phase -> Phase -> Choice :=
   fun (x : Phase) (y : Phase) => either (fun (u : Unit) => isZero y)
     (fun (a : Sum Unit Unit) => either (fun (u : Unit) => inr unit) (fun (b : Sum Unit Unit) => same a b) y) x
 
--- Beta is a pair of sizes, the numerator and the denominator (O9, USER ruling Q-S10-6 (a)). betaGt n d is inl unit
+-- Beta is a pair of sizes, the numerator and the denominator. betaGt n d is inl unit
 -- when n is greater than d, by elim on n and then on d.
 def Beta : Type 0 := Sigma (betaNum : Size) Size
 def sizeOne : Size := szS sz0

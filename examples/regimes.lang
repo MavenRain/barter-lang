@@ -76,7 +76,7 @@ def eqPhase : Phase -> Phase -> Choice :=
   fun (x : Phase) (y : Phase) => either (fun (u : Unit) => isZero y)
     (fun (a : Sum Unit Unit) => either (fun (u : Unit) => inr unit) (fun (b : Sum Unit Unit) => same a b) y) x
 
--- Beta is a pair of sizes, the numerator and the denominator (O9, USER ruling Q-S10-6 (a)). betaGt n d is inl unit
+-- Beta is a pair of sizes, the numerator and the denominator. betaGt n d is inl unit
 -- when n is greater than d, by elim on n and then on d.
 def Beta : Type 0 := Sigma (betaNum : Size) Size
 def sizeOne : Size := szS sz0
@@ -128,7 +128,7 @@ def paraLaw : (c : Config) -> Path Regime (regimeOf (menuAt b11) (orbitProj c)) 
 def forkLaw : (c : Config) -> Path Regime (regimeOf (menuAt b21) (orbitProj c)) SI := fun (c : Config) => refl
 def noneLaw : (c : Config) -> Path Regime (regimeOf cycleMenu (orbitProj c)) AI := fun (c : Config) => refl
 
--- Not X maps X to the empty family (USER ruling Q-S10-9 (a)). Empty has one constructor and no base case, so it has
+-- Not X maps X to the empty family. Empty has one constructor and no base case, so it has
 -- no closed value, and elim with the hypothesis as its case maps it to each type.
 def Not : Type 0 -> Type 0 := fun (X : Type 0) => X -> Empty
 def exfalso : (A : Type 0) -> Empty -> A :=

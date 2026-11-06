@@ -201,7 +201,7 @@ echo "ir lowerings: $irlowered lowered"
 # maximum = the pages of the largest heap bound, at least 1). The module of
 # examples/functions.lang (the builds rows) has 0 heap words: its memory 0
 # must also have 1 page. The Wasm runs and the differential lines run node:
-# they come back at S8 (Q-S3-2 (b)).
+# they are in the Wasm block below.
 
 status=0
 build/langc --kit build test/ir/natops.lang -o "$tmp/natops.wasm" 2>"$tmp/err" || status=$?
@@ -217,9 +217,9 @@ if [ "$status" -ne 0 ] || ! wasm-validate "$tmp/block.wasm" 2>>"$tmp/err"; then
   echo "FAIL build block: want exit 0 and a valid module, got exit $status: $(head -n 1 "$tmp/err")"
   fail=$((fail + 1))
 fi
-# The module of examples/state-no-history.lang (Q-S3-3 (b)): build lowers a
+# The module of examples/state-no-history.lang: build lowers a
 # state family as a plain family. The same build check; the notrap row
-# below uses it. Its differential row comes at S8 (Q-S3-2 (b)).
+# below uses it. Its differential row is in the Wasm block below.
 status=0
 build/langc $(kit examples/kit.txt state-no-history.lang) build examples/state-no-history.lang -o "$tmp/state-no-history.wasm" 2>"$tmp/err" || status=$?
 if [ "$status" -ne 0 ] || ! wasm-validate "$tmp/state-no-history.wasm" 2>>"$tmp/err"; then
@@ -277,11 +277,11 @@ sizeTrap 4
 EOF
 echo "spine evals: $spineevals checked"
 
-# The Wasm target (S2): each module builds and is valid. Then the
-# differential: on the grid of test/grid.awk, node and `langc eval` give the
-# same result for each entry (trap == trap). S3 changes this row (Q-S0-33
-# (a)). The stderr of eval is not merged into stdout. A file in test/ir/
-# takes --kit.
+# The Wasm target: each module builds and is valid. Then the differential:
+# on the grid of test/grid.awk, node and `langc eval` give the same result
+# for each entry. R0 (docs/PLAN.md section 2, Q-S0-33 (a)): no target
+# traps, so a `trap` line on either side is a FAIL. The stderr of eval is
+# not merged into stdout. A file in test/ir/ takes --kit.
 wasms=0
 cases=0
 mismatches=0
@@ -319,6 +319,8 @@ for f in examples/*.lang test/ir/natops.lang test/ir/block.lang test/ir/proof-tr
   bad=$(rg -c '.' "$tmp/bad.txt" || echo 0)
   mismatches=$((mismatches + bad))
   [ "$bad" -eq 0 ] || { echo "FAIL differential $f: $bad mismatches, first $(head -n 1 "$tmp/bad.txt")"; fail=$((fail + 1)); }
+  traps=$(cat "$tmp/want.txt" "$tmp/got.txt" | rg -c -x -F trap || echo 0)
+  [ "$traps" -eq 0 ] || { echo "FAIL trap $f: $traps trap lines (R0)"; fail=$((fail + 1)); }
 done
 echo "wasm: $wasms modules valid"
 echo "differential: $cases cases, $mismatches mismatches"
