@@ -292,6 +292,12 @@ typedef struct {
   /* A law-only def (S5, rule O7): a `law def` of the domain, or a guest def
      that uses one outside a Trunc1 argument. */
   int law_only;
+  /* The interval rule (S5, Q-S5-7 (a)): a guest program def with an Amount
+     (1) or a Height (2) codomain keeps the bound of its result, with each
+     parameter at its width; 0 for any other def. */
+  int bound_kind;
+  uint64_t bound_hi;
+  uint64_t bound_lo;
 } DefInfo;
 
 /* The checked program and the evaluation state. No global state: every

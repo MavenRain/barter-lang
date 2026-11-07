@@ -1,0 +1,2 @@
+-- Q-S5-5 (a): htSucc on a term that is not a literal: REFUSE_READ.
+def next : Height -> Height := fun (h : Height) => htSucc h

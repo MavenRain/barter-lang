@@ -1,0 +1,3 @@
+-- Q-S5-3 (a): the parameter of Sealed is a base type; Size is not:
+-- REFUSE_CELL.
+def sealedSize : Enc Size := seal Size (szS sz0)

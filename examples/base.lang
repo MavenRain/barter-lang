@@ -1,0 +1,34 @@
+-- The base types of design sec 3 (S5). A program reads Amount and Height
+-- only by the domain words: compare (amLe, htLe), select (amSelect,
+-- htSelect), max (amMax, amMin), add (amAdd, htAdd) and a product by a
+-- public scalar (amScale, htScale). The checker gives each term a static
+-- bound; a bound above the 128-bit word gives REFUSE_BOUND (Q-S5-1 (a)).
+def one : Amount := amSucc amZero
+def two : Amount := amSucc (amSucc amZero)
+def three : Height := htSucc (htSucc (htSucc htZero))
+def total : Amount := amAdd one two
+def scaled : Amount := amScale three two
+def htSum : Height := htAdd three three
+def htProd : Height := htScale three three
+def larger : Amount := amMax one two
+def smaller : Amount := amMin one two
+def oneLeTwo : Sum Unit Unit := amLe one two
+def pick : Amount := amSelect Amount one two two one
+def win : Window := window three htZero
+def startOf : Height := wStart win
+def lenOf : Height := wLen win
+def windowSquare : Window -> Height :=
+  fun (w : Window) => htScale (wStart w) (wStart w)
+def squareThree : Height := windowSquare win
+def windowLength : Window -> Height := fun (w : Window) => wLen w
+def lengthOne : Height := windowLength win
+-- A program gets a Token as an input: a Nat literal is a kit item
+-- (Q-S5-10).
+def sameTok : Token -> Sum Unit Unit := fun (a : Token) => tkEq a a
+-- The affine test of design sec 4.1: w * startOut + t * minOut is at most
+-- w * o + t * startOut. Each product is below 2^96, each sum below 2^97.
+def affineOk : Height -> Height -> Amount -> Amount -> Amount -> Sum Unit Unit :=
+  fun (w : Height) (t : Height) (o : Amount) (startOut : Amount) (minOut : Amount) =>
+    amLe (amAdd (amScale w startOut) (amScale t minOut)) (amAdd (amScale w o) (amScale t startOut))
+def affineAt : Sum Unit Unit := affineOk three htZero two two one
+def affineLow : Sum Unit Unit := affineOk three htZero one two one

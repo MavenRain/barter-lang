@@ -59,20 +59,20 @@ use these names.
 
 ## The IR test families
 
-S3 adds `Tree`, `Signal`, `Window`, `Hop` and `Echo` from permit-lang
+S3 adds `Tree`, `Signal`, `Shutter`, `Hop` and `Echo` from permit-lang
 18deea2 for the IR rows. `Size` is in the prelude.
 
 | Family | Kind | Use |
 |---|---|---|
 | `Tree` | two recursive fields, `forkLeft` and `forkRight` | the tree refusal `test/ir/tree.lang` |
 | `Size` | one recursive field, `szPred` | `sizeSum` and `sizeTrap`; `test/ir/spine.lang` (the heap refusal and the spine evals) |
-| `Signal`, `Window` | a block with no recursive field | the block case split `test/ir/block.lang` |
+| `Signal`, `Shutter` | a block with no recursive field | the block case split `test/ir/block.lang` |
 | `Hop`, `Echo` | a block; each has one recursive field of the other family | the block refusal `test/ir/hop.lang` |
 
 `family Tree` exists only for the tree refusal. The gate row checks that
 the lowering refuses a fold over a run-time tree with
 `REFUSE_RUNTIME_TREE`. Rule R1 lets only this file declare a family, so
-the family must be here. The blocks `Signal` / `Window` and `Hop` /
+the family must be here. The blocks `Signal` / `Shutter` and `Hop` /
 `Echo` exist only for the block rows.
 
 ## How to replace the domain

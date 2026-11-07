@@ -1,0 +1,6 @@
+-- Q-S5-1 (a): three products by a Height scalar go above the 128-bit
+-- word: REFUSE_BOUND. Two products (twice) are in bounds.
+def twice : Height -> Amount -> Amount :=
+  fun (k : Height) (a : Amount) => amScale k (amScale k a)
+def thrice : Height -> Amount -> Amount :=
+  fun (k : Height) (a : Amount) => amScale k (amScale k (amScale k a))

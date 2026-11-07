@@ -1,0 +1,2 @@
+-- Q-S5-9: a word operation (amAdd) used as a value: REFUSE_BOUND.
+def addOne : Amount -> Amount := amAdd (amSucc amZero)

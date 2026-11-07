@@ -1,0 +1,4 @@
+-- Enc must receive its base type before it can escape as a value.
+def atSize : (Type 0 -> Type 0) -> Type 0 :=
+  fun (f : Type 0 -> Type 0) => f Size
+def forbidden : Type 0 := atSize Enc

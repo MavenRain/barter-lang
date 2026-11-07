@@ -1,0 +1,5 @@
+-- wLen adds one to its stored predecessor. The loop binder has the word
+-- bound, so this implicit successor can overflow just like htAdd.
+def windowLoop : Size -> Height :=
+  fun (n : Size) => elim (fun (s : Size) => Height) htZero
+    (fun (p : Size) (ih : Height) => wLen (window htZero ih)) n

@@ -1,0 +1,4 @@
+-- The length predecessor must also fit the Window parameter's width.
+def readLength : Window -> Height := fun (w : Window) => wLen w
+def wideLength : Height -> Height :=
+  fun (h : Height) => readLength (window htZero (htScale h h))

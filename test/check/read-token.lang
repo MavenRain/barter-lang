@@ -1,0 +1,2 @@
+-- Q-S5-5 (a): a program reads a Token by a projection: REFUSE_READ.
+def sameToken : Token -> Token := fun (a : Token) => token (tokId a)

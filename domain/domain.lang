@@ -1,7 +1,7 @@
 -- The domain file. The kernel port (S2, from ratify-lang a2322ef and
 -- permit-lang 3d47120) removes the kit sample and adds the kernel prelude.
 -- The R1 formers Enc and open are at the end (S4). The barter-lang
--- domain words come in a later slice (S5).
+-- base types of design sec 3 come after them (S5).
 -- Each family, constructor, field and def name here becomes a core name
 -- (rule R4). Only this file can declare a family (rule R1).
 
@@ -265,12 +265,12 @@ def uaArrow : (A : Type 0) -> (B : Type 0) -> (C : Type 0) -> (e : Equiv A B) ->
 -- REFUSE_RUNTIME_TREE (test/ir/tree.lang). No def here uses it.
 family Tree := tip | fork (forkLeft : Tree) (forkRight : Tree)
 
--- Two blocks for the block rows of the lowering (S3). Signal and Window have no recursive field, so a fold over
--- Window is a case split: its cases come after the two cases of Signal
+-- Two blocks for the block rows of the lowering (S3). Signal and Shutter have no recursive field, so a fold over
+-- Shutter is a case split: its cases come after the two cases of Signal
 -- (test/ir/block.lang). Hop and Echo each have one recursive field of the
 -- other family, so the lowering refuses a fold over them (test/ir/hop.lang).
 family Signal := sigQuiet | sigLoud (loudLevel : Nat)
-and Window := winOpen | winShut (shutFor : Nat)
+and Shutter := winOpen | winShut (shutFor : Nat)
 family Hop := hopEnd | hopNext (nextEcho : Echo)
 and Echo := echoBack (backHop : Hop)
 -- The R1 formers (S4, PLAN section 3, Q-S0-3 (a)). Sealed is the carrier
@@ -297,3 +297,194 @@ law def openSeal : (A : Type 0) -> (a : A) -> Path A (open A (seal A a)) a :=
 law def openBind : (A : Type 0) -> (B : Type 0) -> (m : Sealed A) -> (f : A -> Sealed B) -> Path B (open B (encBind A B m f)) (open B (f (open A m))) :=
   fun (A : Type 0) (B : Type 0) (m : Sealed A) (f : A -> Sealed B) =>
     elim (fun (s : Sealed A) => Path B (open B (encBind A B s f)) (open B (f (open A s)))) (fun (a : A) => refl) m
+-- The base types of design sec 3 (S5, Q-S5-1 to Q-S5-8). Amount and Height
+-- are inductive families, so their laws are proofs by elim. A program reads
+-- a base type only through the words below: an elim, a fold or a
+-- projection of a base family, or amSucc or htSucc on a term that is not a
+-- literal, gives REFUSE_READ (Q-S5-5 (a)). There is no subtraction and no
+-- division on Amount and Height. The compare result is Sum Unit Unit as in
+-- consP: inr unit is "at most" and inl unit is "more than". amSelect A x y
+-- p q is p when x is at most y, else q. The checker gives each program sum
+-- and product a static bound (Q-S5-1 (a)): an Amount input 2^64 - 1, a
+-- Height input 2^32 - 1, and REFUSE_BOUND when a bound passes 2^128 - 1.
+-- Amount, amLe, amSelect, amMax, amMin and their laws are a hand port of
+-- gavel-lang b2da56f.
+family Amount := amZero | amSucc (amPred : Amount)
+family Height := htZero | htSucc (htPred : Height)
+def amLe : Amount -> Amount -> Sum Unit Unit :=
+  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Sum Unit Unit)
+    (fun (y : Amount) => inr unit)
+    (fun (a : Amount) (ih : Amount -> Sum Unit Unit) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Sum Unit Unit) (inl unit) (fun (b : Amount) (ihb : Sum Unit Unit) => ih b) y) x
+def amSelect : (A : Type 0) -> Amount -> Amount -> A -> A -> A :=
+  fun (A : Type 0) (x : Amount) => elim (fun (a : Amount) => Amount -> A -> A -> A)
+    (fun (y : Amount) (p : A) (q : A) => p)
+    (fun (a : Amount) (ih : Amount -> A -> A -> A) => fun (y : Amount) =>
+      elim (fun (b : Amount) => A -> A -> A) (fun (p : A) (q : A) => q) (fun (b : Amount) (ihb : A -> A -> A) => ih b) y) x
+def amMax : Amount -> Amount -> Amount :=
+  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Amount)
+    (fun (y : Amount) => y)
+    (fun (a : Amount) (ih : Amount -> Amount) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Amount) (amSucc a) (fun (b : Amount) (ihb : Amount) => amSucc (ih b)) y) x
+def amMin : Amount -> Amount -> Amount :=
+  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Amount)
+    (fun (y : Amount) => amZero)
+    (fun (a : Amount) (ih : Amount -> Amount) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Amount) amZero (fun (b : Amount) (ihb : Amount) => amSucc (ih b)) y) x
+-- amAdd x y is the sum. amScale k x is the product of x by the public
+-- scalar k (Q-S5-2 (a)): k copies of x.
+def amAdd : Amount -> Amount -> Amount :=
+  fun (x : Amount) (y : Amount) => elim (fun (a : Amount) => Amount) y (fun (a : Amount) (ih : Amount) => amSucc ih) x
+def amScale : Height -> Amount -> Amount :=
+  fun (k : Height) (x : Amount) => elim (fun (h : Height) => Amount) amZero (fun (h : Height) (ih : Amount) => amAdd x ih) k
+-- The laws of amLe, amMax, amMin and amSelect, by induction on the amounts.
+-- "x is at most y" is the path amMax x y = y; leOfMax turns it into the
+-- compare form amLe x y = inr unit.
+def leRefl : (x : Amount) -> Path (Sum Unit Unit) (amLe x x) (inr unit) :=
+  fun (x : Amount) => elim (fun (a : Amount) => Path (Sum Unit Unit) (amLe a a) (inr unit)) refl
+    (fun (a : Amount) (ih : Path (Sum Unit Unit) (amLe a a) (inr unit)) => ih) x
+def maxLe : (x : Amount) -> (y : Amount) -> Path (Sum Unit Unit) (amLe x (amMax x y)) (inr unit) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> Path (Sum Unit Unit) (amLe a (amMax a y)) (inr unit))
+    (fun (y : Amount) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> Path (Sum Unit Unit) (amLe a (amMax a y)) (inr unit)) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Path (Sum Unit Unit) (amLe (amSucc a) (amMax (amSucc a) b)) (inr unit))
+        (leRefl a)
+        (fun (b : Amount) (ihb : Path (Sum Unit Unit) (amLe (amSucc a) (amMax (amSucc a) b)) (inr unit)) => ih b) y) x
+def maxIdem : (x : Amount) -> Path Amount (amMax x x) x :=
+  fun (x : Amount) => elim (fun (a : Amount) => Path Amount (amMax a a) a) refl
+    (fun (a : Amount) (ih : Path Amount (amMax a a) a) => cong (fun (m : Amount) => amSucc m) ih) x
+def maxComm : (x : Amount) -> (y : Amount) -> Path Amount (amMax x y) (amMax y x) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> Path Amount (amMax a y) (amMax y a))
+    (fun (y : Amount) => elim (fun (b : Amount) => Path Amount (amMax amZero b) (amMax b amZero)) refl
+      (fun (b : Amount) (ihb : Path Amount (amMax amZero b) (amMax b amZero)) => refl) y)
+    (fun (a : Amount) (ih : (y : Amount) -> Path Amount (amMax a y) (amMax y a)) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Path Amount (amMax (amSucc a) b) (amMax b (amSucc a))) refl
+        (fun (b : Amount) (ihb : Path Amount (amMax (amSucc a) b) (amMax b (amSucc a))) => cong (fun (m : Amount) => amSucc m) (ih b)) y) x
+def maxAssoc : (x : Amount) -> (y : Amount) -> (z : Amount) -> Path Amount (amMax (amMax x y) z) (amMax x (amMax y z)) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> (z : Amount) -> Path Amount (amMax (amMax a y) z) (amMax a (amMax y z)))
+    (fun (y : Amount) (z : Amount) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> (z : Amount) -> Path Amount (amMax (amMax a y) z) (amMax a (amMax y z))) => fun (y : Amount) =>
+      elim (fun (b : Amount) => (z : Amount) -> Path Amount (amMax (amMax (amSucc a) b) z) (amMax (amSucc a) (amMax b z)))
+        (fun (z : Amount) => refl)
+        (fun (b : Amount) (ihb : (z : Amount) -> Path Amount (amMax (amMax (amSucc a) b) z) (amMax (amSucc a) (amMax b z))) => fun (z : Amount) =>
+          elim (fun (c : Amount) => Path Amount (amMax (amMax (amSucc a) (amSucc b)) c) (amMax (amSucc a) (amMax (amSucc b) c)))
+            refl
+            (fun (c : Amount) (ihc : Path Amount (amMax (amMax (amSucc a) (amSucc b)) c) (amMax (amSucc a) (amMax (amSucc b) c))) =>
+              cong (fun (m : Amount) => amSucc m) (ih b c)) z) y) x
+def maxSwap : (x : Amount) -> (y : Amount) -> (z : Amount) -> Path Amount (amMax x (amMax y z)) (amMax y (amMax x z)) :=
+  fun (x : Amount) (y : Amount) (z : Amount) =>
+    trans Amount (amMax x (amMax y z)) (amMax (amMax x y) z) (amMax y (amMax x z))
+      (sym (maxAssoc x y z))
+      (trans Amount (amMax (amMax x y) z) (amMax (amMax y x) z) (amMax y (amMax x z))
+        (cong (fun (m : Amount) => amMax m z) (maxComm x y))
+        (maxAssoc y x z))
+def minMax : (x : Amount) -> (y : Amount) -> Path Amount (amMax (amMin x y) (amMax x y)) (amMax x y) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> Path Amount (amMax (amMin a y) (amMax a y)) (amMax a y))
+    (fun (y : Amount) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> Path Amount (amMax (amMin a y) (amMax a y)) (amMax a y)) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Path Amount (amMax (amMin (amSucc a) b) (amMax (amSucc a) b)) (amMax (amSucc a) b))
+        refl
+        (fun (b : Amount) (ihb : Path Amount (amMax (amMin (amSucc a) b) (amMax (amSucc a) b)) (amMax (amSucc a) b)) =>
+          cong (fun (m : Amount) => amSucc m) (ih b)) y) x
+def selMap : (A : Type 0) -> (B : Type 0) -> (f : A -> B) -> (x : Amount) -> (y : Amount) -> (p : A) -> (q : A) -> Path B (amSelect B x y (f p) (f q)) (f (amSelect A x y p q)) :=
+  fun (A : Type 0) (B : Type 0) (f : A -> B) (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> (p : A) -> (q : A) -> Path B (amSelect B a y (f p) (f q)) (f (amSelect A a y p q)))
+    (fun (y : Amount) (p : A) (q : A) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> (p : A) -> (q : A) -> Path B (amSelect B a y (f p) (f q)) (f (amSelect A a y p q))) => fun (y : Amount) =>
+      elim (fun (b : Amount) => (p : A) -> (q : A) -> Path B (amSelect B (amSucc a) b (f p) (f q)) (f (amSelect A (amSucc a) b p q)))
+        (fun (p : A) (q : A) => refl)
+        (fun (b : Amount) (ihb : (p : A) -> (q : A) -> Path B (amSelect B (amSucc a) b (f p) (f q)) (f (amSelect A (amSucc a) b p q))) => ih b) y) x
+def selRefl : (A : Type 0) -> (x : Amount) -> (p : A) -> (q : A) -> Path A (amSelect A x x p q) p :=
+  fun (A : Type 0) (x : Amount) => elim (fun (a : Amount) => (p : A) -> (q : A) -> Path A (amSelect A a a p q) p)
+    (fun (p : A) (q : A) => refl)
+    (fun (a : Amount) (ih : (p : A) -> (q : A) -> Path A (amSelect A a a p q) p) => ih) x
+def selMax : (x : Amount) -> (y : Amount) -> Path Amount (amSelect Amount x y y x) (amMax x y) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> Path Amount (amSelect Amount a y y a) (amMax a y))
+    (fun (y : Amount) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> Path Amount (amSelect Amount a y y a) (amMax a y)) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Path Amount (amSelect Amount (amSucc a) b b (amSucc a)) (amMax (amSucc a) b))
+        refl
+        (fun (b : Amount) (ihb : Path Amount (amSelect Amount (amSucc a) b b (amSucc a)) (amMax (amSucc a) b)) =>
+          trans Amount (amSelect Amount a b (amSucc b) (amSucc a)) (amSucc (amSelect Amount a b b a)) (amSucc (amMax a b))
+            (selMap Amount Amount (fun (m : Amount) => amSucc m) a b b a)
+            (cong (fun (m : Amount) => amSucc m) (ih b))) y) x
+def lubLe : (x : Amount) -> (y : Amount) -> (m : Amount) -> Path Amount (amMax x m) m -> Path Amount (amMax y m) m -> Path Amount (amMax (amMax x y) m) m :=
+  fun (x : Amount) (y : Amount) (m : Amount) (p : Path Amount (amMax x m) m) (q : Path Amount (amMax y m) m) =>
+    trans Amount (amMax (amMax x y) m) (amMax x (amMax y m)) m (maxAssoc x y m)
+      (trans Amount (amMax x (amMax y m)) (amMax x m) m (cong (fun (n : Amount) => amMax x n) q) p)
+def leMaxR : (x : Amount) -> (m : Amount) -> (n : Amount) -> Path Amount (amMax x m) m -> Path Amount (amMax x (amMax n m)) (amMax n m) :=
+  fun (x : Amount) (m : Amount) (n : Amount) (p : Path Amount (amMax x m) m) =>
+    trans Amount (amMax x (amMax n m)) (amMax n (amMax x m)) (amMax n m) (maxSwap x n m) (cong (fun (k : Amount) => amMax n k) p)
+def leOfMax : (x : Amount) -> (y : Amount) -> Path Amount (amMax x y) y -> Path (Sum Unit Unit) (amLe x y) (inr unit) :=
+  fun (x : Amount) (y : Amount) (p : Path Amount (amMax x y) y) =>
+    trans (Sum Unit Unit) (amLe x y) (amLe x (amMax x y)) (inr unit) (cong (fun (m : Amount) => amLe x m) (sym p)) (maxLe x y)
+-- The laws of amAdd and amScale: the zero and succ equations hold by refl;
+-- amAddZeroR and scaleOne go by induction.
+def addZeroL : (y : Amount) -> Path Amount (amAdd amZero y) y :=
+  fun (y : Amount) => refl
+def addSuccL : (x : Amount) -> (y : Amount) -> Path Amount (amAdd (amSucc x) y) (amSucc (amAdd x y)) :=
+  fun (x : Amount) (y : Amount) => refl
+def amAddZeroR : (x : Amount) -> Path Amount (amAdd x amZero) x :=
+  fun (x : Amount) => elim (fun (a : Amount) => Path Amount (amAdd a amZero) a) refl
+    (fun (a : Amount) (ih : Path Amount (amAdd a amZero) a) => cong (fun (m : Amount) => amSucc m) ih) x
+def scaleZero : (x : Amount) -> Path Amount (amScale htZero x) amZero :=
+  fun (x : Amount) => refl
+def scaleSucc : (k : Height) -> (x : Amount) -> Path Amount (amScale (htSucc k) x) (amAdd x (amScale k x)) :=
+  fun (k : Height) (x : Amount) => refl
+def scaleOne : (x : Amount) -> Path Amount (amScale (htSucc htZero) x) x :=
+  fun (x : Amount) => amAddZeroR x
+-- The height words have the shape of the amount words: htLe (compare),
+-- htSelect (select), htAdd (sum) and htScale (product by a public scalar,
+-- Q-S5-2 (a)).
+def htLe : Height -> Height -> Sum Unit Unit :=
+  fun (x : Height) => elim (fun (a : Height) => Height -> Sum Unit Unit)
+    (fun (y : Height) => inr unit)
+    (fun (a : Height) (ih : Height -> Sum Unit Unit) => fun (y : Height) =>
+      elim (fun (b : Height) => Sum Unit Unit) (inl unit) (fun (b : Height) (ihb : Sum Unit Unit) => ih b) y) x
+def htSelect : (A : Type 0) -> Height -> Height -> A -> A -> A :=
+  fun (A : Type 0) (x : Height) => elim (fun (a : Height) => Height -> A -> A -> A)
+    (fun (y : Height) (p : A) (q : A) => p)
+    (fun (a : Height) (ih : Height -> A -> A -> A) => fun (y : Height) =>
+      elim (fun (b : Height) => A -> A -> A) (fun (p : A) (q : A) => q) (fun (b : Height) (ihb : A -> A -> A) => ih b) y) x
+def htAdd : Height -> Height -> Height :=
+  fun (x : Height) (y : Height) => elim (fun (a : Height) => Height) y (fun (a : Height) (ih : Height) => htSucc ih) x
+def htScale : Height -> Height -> Height :=
+  fun (k : Height) (x : Height) => elim (fun (h : Height) => Height) htZero (fun (h : Height) (ih : Height) => htAdd x ih) k
+def htLeRefl : (x : Height) -> Path (Sum Unit Unit) (htLe x x) (inr unit) :=
+  fun (x : Height) => elim (fun (a : Height) => Path (Sum Unit Unit) (htLe a a) (inr unit)) refl
+    (fun (a : Height) (ih : Path (Sum Unit Unit) (htLe a a) (inr unit)) => ih) x
+def htAddZeroR : (x : Height) -> Path Height (htAdd x htZero) x :=
+  fun (x : Height) => elim (fun (a : Height) => Path Height (htAdd a htZero) a) refl
+    (fun (a : Height) (ih : Path Height (htAdd a htZero) a) => cong (fun (m : Height) => htSucc m) ih) x
+def htScaleSucc : (k : Height) -> (x : Height) -> Path Height (htScale (htSucc k) x) (htAdd x (htScale k x)) :=
+  fun (k : Height) (x : Height) => refl
+def htScaleOne : (x : Height) -> Path Height (htScale (htSucc htZero) x) x :=
+  fun (x : Height) => htAddZeroR x
+-- The window (design sec 3): a start height and a length. The family
+-- keeps the length minus one, so the length htSucc winLenPred is more than
+-- zero by construction. A program reads a window only by wStart and wLen.
+family Window := window (winStart : Height) (winLenPred : Height)
+def wStart : Window -> Height :=
+  fun (w : Window) => elim (fun (v : Window) => Height) (fun (s : Height) (l : Height) => s) w
+def wLen : Window -> Height :=
+  fun (w : Window) => elim (fun (v : Window) => Height) (fun (s : Height) (l : Height) => htSucc l) w
+def wLenPos : (w : Window) -> Path (Sum Unit Unit) (htLe (htSucc htZero) (wLen w)) (inr unit) :=
+  fun (w : Window) => elim (fun (v : Window) => Path (Sum Unit Unit) (htLe (htSucc htZero) (wLen v)) (inr unit)) (fun (s : Height) (l : Height) => refl) w
+-- The token and the nullifier: one constructor over Nat each. tkEq and
+-- nfEq are the equality words (inr unit is "equal").
+family Token := token (tokId : Nat)
+def tkEq : Token -> Token -> Sum Unit Unit :=
+  fun (a : Token) (b : Token) => elim (fun (u : Token) => Sum Unit Unit)
+    (fun (i : Nat) => elim (fun (v : Token) => Sum Unit Unit)
+      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
+family Nullifier := nullifier (nfId : Nat)
+def nfEq : Nullifier -> Nullifier -> Sum Unit Unit :=
+  fun (a : Nullifier) (b : Nullifier) => elim (fun (u : Nullifier) => Sum Unit Unit)
+    (fun (i : Nat) => elim (fun (v : Nullifier) => Sum Unit Unit)
+      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
+-- The opaque types (design sec 3): one constructor over Nat each. Their
+-- equality words come with the slice that needs them (S6, S7); Hash comes
+-- at S8b.
+family Key := key (keyId : Nat)
+family Sig := sig (sigId : Nat)
+family Commitment := commitment (cmtId : Nat)
+family Root := root (rootId : Nat)

@@ -1,0 +1,5 @@
+-- Q-S5-6 (a): an elim case binder (ih) has the word bound, so a loop
+-- cannot hide an iterated product: REFUSE_BOUND.
+def power : Height -> Amount -> Size -> Amount :=
+  fun (k : Height) (a : Amount) (n : Size) =>
+    elim (fun (s : Size) => Amount) a (fun (p : Size) (ih : Amount) => amScale k ih) n

@@ -1,0 +1,6 @@
+-- A Window parameter assumes 32-bit fields. A caller must prove those
+-- field widths before it can use the helper's result bound.
+def squareWindow : Window -> Height :=
+  fun (w : Window) => htScale (wStart w) (wStart w)
+def eighth : Height -> Height :=
+  fun (h : Height) => squareWindow (window (htScale h (htScale h (htScale h h))) htZero)

@@ -1,0 +1,3 @@
+-- Q-S5-5 (a): a program reads an Amount by an elim: REFUSE_READ.
+def isZero : Amount -> Sum Unit Unit :=
+  fun (a : Amount) => elim (fun (x : Amount) => Sum Unit Unit) (inr unit) (fun (p : Amount) (ih : Sum Unit Unit) => inl unit) a

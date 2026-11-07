@@ -4000,6 +4000,555 @@ static int law_type(Machine *m, uint32_t level, uint32_t trunc, const Value *t) 
   return t != NULL && (t->kind == VAL_PATHP || is_family(t, trunc));
 }
 
+/* Q-S5-5 (a): the constructor index of NAME, or UINT32_MAX (also for a
+   NULL name). */
+static uint32_t bound_ctor(const Machine *m, const char *name) {
+  uint32_t i;
+  if (name == NULL)
+    return UINT32_MAX;
+  for (i = 0; i < m->ctor_count; i++) {
+    if (m->ctors[i].name != NULL && strcmp(m->ctors[i].name, name) == 0)
+      return i;
+  }
+  return UINT32_MAX;
+}
+
+/* The base families of design sec 3 (S5). ZERO and SUCC name the literal
+   constructors of Amount and Height; the other rows have none. */
+typedef struct {
+  const char *family;
+  const char *zero;
+  const char *succ;
+} BaseFamily;
+
+static const BaseFamily BASE_FAMILIES[] = {
+  {"Amount", "amZero", "amSucc"},
+  {"Height", "htZero", "htSucc"},
+  {"Window", NULL, NULL},
+  {"Token", NULL, NULL},
+  {"Nullifier", NULL, NULL},
+  {"Key", NULL, NULL},
+  {"Sig", NULL, NULL},
+  {"Commitment", NULL, NULL},
+  {"Root", NULL, NULL}
+};
+
+#define BASE_FAMILY_COUNT ((uint32_t)(sizeof BASE_FAMILIES / sizeof BASE_FAMILIES[0]))
+
+/* 1 if the core term T is a closed literal: ZERO, or SUCC of a literal. */
+static int base_literal(uint32_t zero, uint32_t succ, const Core *t) {
+  while (t != NULL && t->kind == CORE_OP && t->op == OP_CTOR && t->inst == succ && t->argc == 1u)
+    t = t->args[0];
+  return t != NULL && t->kind == CORE_OP && t->op == OP_CTOR && t->inst == zero;
+}
+
+/* Q-S5-5 (a): 1 if T has an elim, a fold or a projection of the family
+   FAM, or SUCC on a term that is not a literal (the law_uses walk). A
+   global is not entered: the domain words read a base value for the
+   program. */
+static int base_uses(const Machine *m, uint32_t fam, uint32_t zero, uint32_t succ, const Core *t) {
+  uint32_t i;
+  if (t == NULL)
+    return 0;
+  switch (t->kind) {
+  case CORE_VAR:
+  case CORE_GLOBAL:
+  case CORE_NAT:
+  case CORE_UNIV:
+  case CORE_IZERO:
+  case CORE_IONE:
+    return 0;
+  case CORE_LAM:
+  case CORE_PI:
+  case CORE_SIGMA:
+  case CORE_APP:
+  case CORE_PLAM:
+  case CORE_INEG:
+  case CORE_IMEET:
+  case CORE_IJOIN:
+    return base_uses(m, fam, zero, succ, t->a) || base_uses(m, fam, zero, succ, t->b);
+  case CORE_PATHP:
+  case CORE_PAPP:
+    return base_uses(m, fam, zero, succ, t->a) || base_uses(m, fam, zero, succ, t->b) || base_uses(m, fam, zero, succ, t->args[0]) || base_uses(m, fam, zero, succ, t->args[1]);
+  case CORE_OP:
+    break;
+  }
+  if ((t->op == OP_FOLD_FAMILY && t->inst == fam) || (t->op == OP_ELIM && t->field == fam + 1u) || (t->op == OP_PROJ && m->ctors[t->inst].family == fam))
+    return 1;
+  if (t->op == OP_CTOR && t->inst == succ)
+    return !base_literal(zero, succ, t);
+  for (i = 0; i < t->argc; i++) {
+    if (base_uses(m, fam, zero, succ, t->args[i]))
+      return 1;
+  }
+  return 0;
+}
+
+/* Q-S5-5 (a): 1 if the written type or the body reads a base family. The
+   quoted type is not walked: a program may state a law at an open value
+   (amMax x y in a Path type normalizes to an elim). */
+static int base_read(const Machine *m, const Core *type, const Core *body) {
+  uint32_t i;
+  for (i = 0; i < BASE_FAMILY_COUNT; i++) {
+    uint32_t fam = find_family(m, BASE_FAMILIES[i].family);
+    uint32_t zero = bound_ctor(m, BASE_FAMILIES[i].zero);
+    uint32_t succ = bound_ctor(m, BASE_FAMILIES[i].succ);
+    if (fam != NO_FAMILY && (base_uses(m, fam, zero, succ, type) || base_uses(m, fam, zero, succ, body)))
+      return 1;
+  }
+  return 0;
+}
+
+/* 1 if the core T is the core name OP. */
+static int core_op_is(const Core *t, Op op) {
+  return t != NULL && t->kind == CORE_OP && t->op == op;
+}
+
+/* The head of the application spine T; *N gets the argument count. */
+static const Core *spine_head(const Core *t, uint32_t *n) {
+  uint32_t k = 0;
+  while (t->kind == CORE_APP) {
+    t = t->a;
+    k++;
+  }
+  *n = k;
+  return t;
+}
+
+/* Argument J (from 0) of the application spine T with N arguments. */
+static const Core *spine_arg(const Core *t, uint32_t n, uint32_t j) {
+  uint32_t k;
+  for (k = j + 1u; k < n; k++)
+    t = t->a;
+  return t->b;
+}
+
+/* 1 if the core T is the domain def NAME. */
+static int domain_global(const Machine *m, const Core *t, const char *name) {
+  return t != NULL && t->kind == CORE_GLOBAL && m->defs[t->index].origin != ORIGIN_PROGRAM && strcmp(m->defs[t->index].name, name) == 0;
+}
+
+/* Q-S4-4 (a), Q-S5-3 (a): 1 if the type core X is a parameter that Sealed
+   accepts: Amount, Height, Token or Sum Unit Unit. */
+static int cell_base(const Machine *m, const Core *x) {
+  if (core_op_is(x, OP_SUM))
+    return x->argc == 2u && core_op_is(x->args[0], OP_UNIT) && core_op_is(x->args[1], OP_UNIT);
+  return core_op_is(x, OP_FAMILY) && x->argc == 0u && (x->inst == find_family(m, "Amount") || x->inst == find_family(m, "Height") || x->inst == find_family(m, "Token"));
+}
+
+/* The type arguments of the R1 head H: 1 for Enc, 2 for encBind and
+   encMap, else 0. */
+static uint32_t cell_type_args(const Machine *m, const Core *h) {
+  if (domain_global(m, h, "Enc"))
+    return 1u;
+  return domain_global(m, h, "encBind") || domain_global(m, h, "encMap") ? 2u : 0u;
+}
+
+/* Q-S5-3 (a): 1 if T gives Sealed a parameter that is not a base type: the
+   family SEALED, the constructor SEAL, or a type argument of Enc, encBind
+   or encMap. */
+static int cell_uses(const Machine *m, uint32_t sealed, uint32_t seal, const Core *t) {
+  uint32_t i;
+  uint32_t n;
+  uint32_t k;
+  const Core *h;
+  if (t == NULL)
+    return 0;
+  switch (t->kind) {
+  case CORE_VAR:
+  case CORE_NAT:
+  case CORE_UNIV:
+  case CORE_IZERO:
+  case CORE_IONE:
+    return 0;
+  case CORE_GLOBAL:
+    return cell_type_args(m, t) != 0u;
+  case CORE_APP:
+    h = spine_head(t, &n);
+    k = cell_type_args(m, h);
+    if (n < k)
+      return 1;
+    for (i = 0; i < k; i++) {
+      if (!cell_base(m, spine_arg(t, n, i)))
+        return 1;
+    }
+    if (k != 0u) {
+      for (i = 0; i < n; i++) {
+        if (cell_uses(m, sealed, seal, spine_arg(t, n, i)))
+          return 1;
+      }
+      return 0;
+    }
+    return cell_uses(m, sealed, seal, t->a) || cell_uses(m, sealed, seal, t->b);
+  case CORE_LAM:
+  case CORE_PI:
+  case CORE_SIGMA:
+  case CORE_PLAM:
+  case CORE_INEG:
+  case CORE_IMEET:
+  case CORE_IJOIN:
+    return cell_uses(m, sealed, seal, t->a) || cell_uses(m, sealed, seal, t->b);
+  case CORE_PATHP:
+  case CORE_PAPP:
+    return cell_uses(m, sealed, seal, t->a) || cell_uses(m, sealed, seal, t->b) || cell_uses(m, sealed, seal, t->args[0]) || cell_uses(m, sealed, seal, t->args[1]);
+  case CORE_OP:
+    break;
+  }
+  if (((t->op == OP_FAMILY && t->inst == sealed) || (t->op == OP_CTOR && t->inst == seal)) && t->argc >= 1u && !cell_base(m, t->args[0]))
+    return 1;
+  for (i = 0; i < t->argc; i++) {
+    if (cell_uses(m, sealed, seal, t->args[i]))
+      return 1;
+  }
+  return 0;
+}
+
+/* Q-S5-3 (a): 1 if the written type or the body seals a type that is not a
+   base type. */
+static int cell_read(const Machine *m, const Core *type, const Core *body) {
+  uint32_t sealed = find_family(m, "Sealed");
+  uint32_t seal = bound_ctor(m, "seal");
+  return sealed != NO_FAMILY && (cell_uses(m, sealed, seal, type) || cell_uses(m, sealed, seal, body));
+}
+
+/* The interval rule (S5, OI-7): Q-S5-1 (a) widths (Amount 64 bits, Height
+   32 bits) and the 128-bit target word; Q-S5-6 (a) a binder that is not a
+   parameter of the def has the word bound; Q-S5-7 (a) the bound table of
+   the program defs. A bound is HI * 2^64 + LO; OVER marks a value above
+   the word. */
+typedef struct {
+  uint64_t hi;
+  uint64_t lo;
+  int over;
+} Bound;
+
+#define BOUND_PARAMS 64u
+
+/* A Pi telescope: the Pi count, the kinds of the first BOUND_PARAMS
+   domains and the kind of the final codomain (0 other, 1 Amount, 2
+   Height, 3 Window). */
+typedef struct {
+  uint32_t count;
+  int kinds[BOUND_PARAMS];
+  int result;
+} BoundSig;
+
+typedef struct {
+  Machine *m;
+  uint32_t level; /* the first fresh level of the Pi walks */
+  uint32_t amount;
+  uint32_t height;
+  uint32_t am_zero;
+  uint32_t am_succ;
+  uint32_t ht_zero;
+  uint32_t ht_succ;
+  uint32_t window;
+  BoundSig sig;    /* the type of the checked def */
+  uint32_t params; /* P: the leading lambdas of the body, at most sig.count */
+} BoundCx;
+
+static Bound bound_of(uint64_t lo) {
+  Bound b;
+  b.hi = 0;
+  b.lo = lo;
+  b.over = 0;
+  return b;
+}
+
+/* 2^128 - 1, the largest value of the target word. */
+static Bound bound_word(void) {
+  Bound b;
+  b.hi = UINT64_MAX;
+  b.lo = UINT64_MAX;
+  b.over = 0;
+  return b;
+}
+
+static Bound bound_width(int kind) {
+  if (kind == 1)
+    return bound_of(UINT64_MAX);
+  return kind == 2 ? bound_of(0xffffffffu) : bound_word();
+}
+
+static Bound bound_add(Bound a, Bound b) {
+  Bound r;
+  uint64_t carry;
+  r.lo = a.lo + b.lo;
+  carry = r.lo < a.lo ? 1u : 0u;
+  r.hi = a.hi + b.hi + carry;
+  r.over = a.over || b.over || a.hi + b.hi < a.hi || r.hi < a.hi + b.hi;
+  return r;
+}
+
+/* The 128-bit product of X and Y by 32-bit halves (tcc has no 128-bit
+   type). */
+static void bound_mul64(uint64_t x, uint64_t y, uint64_t *hi, uint64_t *lo) {
+  uint64_t x0 = x & 0xffffffffu;
+  uint64_t x1 = x >> 32;
+  uint64_t y0 = y & 0xffffffffu;
+  uint64_t y1 = y >> 32;
+  uint64_t p00 = x0 * y0;
+  uint64_t p01 = x0 * y1;
+  uint64_t p10 = x1 * y0;
+  uint64_t mid = (p00 >> 32) + (p01 & 0xffffffffu) + (p10 & 0xffffffffu);
+  *lo = (mid << 32) | (p00 & 0xffffffffu);
+  *hi = x1 * y1 + (p01 >> 32) + (p10 >> 32) + (mid >> 32);
+}
+
+static Bound bound_mul(Bound a, Bound b) {
+  Bound r;
+  uint64_t h1;
+  uint64_t l1;
+  uint64_t h2;
+  uint64_t l2;
+  uint64_t cross;
+  bound_mul64(a.lo, b.lo, &r.hi, &r.lo);
+  bound_mul64(a.hi, b.lo, &h1, &l1);
+  bound_mul64(b.hi, a.lo, &h2, &l2);
+  cross = l1 + l2;
+  r.over = a.over || b.over || (a.hi != 0u && b.hi != 0u) || h1 != 0u || h2 != 0u || cross < l1 || r.hi + cross < r.hi;
+  r.hi += cross;
+  return r;
+}
+
+static Bound bound_max(Bound a, Bound b) {
+  if (a.over || b.over)
+    return a.over ? a : b;
+  return a.hi > b.hi || (a.hi == b.hi && a.lo >= b.lo) ? a : b;
+}
+
+/* 1 if A is above the width W. */
+static int bound_above(Bound a, Bound w) {
+  return a.over || a.hi > w.hi || (a.hi == w.hi && a.lo > w.lo);
+}
+
+static int bound_kind_of(const BoundCx *x, const Value *t) {
+  if (t != NULL && is_family(t, x->amount))
+    return 1;
+  if (t != NULL && is_family(t, x->height))
+    return 2;
+  return t != NULL && is_family(t, find_family(x->m, "Window")) ? 3 : 0;
+}
+
+static void bound_sig(const BoundCx *x, const Value *t, BoundSig *s) {
+  uint32_t n = 0;
+  uint32_t i;
+  for (i = 0; i < BOUND_PARAMS; i++)
+    s->kinds[i] = 0;
+  while (t != NULL && t->kind == VAL_PI) {
+    if (n < BOUND_PARAMS)
+      s->kinds[n] = bound_kind_of(x, t->dom);
+    t = closure_apply(x->m, t, val_var(x->m, x->level + n));
+    n++;
+  }
+  s->count = n;
+  s->result = bound_kind_of(x, t);
+}
+
+/* 1 if the telescope S has an Amount, Height or Window parameter. */
+static int bound_sig_base(const BoundSig *s) {
+  uint32_t i;
+  for (i = 0; i < s->count && i < BOUND_PARAMS; i++) {
+    if (s->kinds[i] != 0)
+      return 1;
+  }
+  return 0;
+}
+
+/* The arity of a word that can make a bound larger, including the
+   implicit successor of wLen. Such a word cannot escape as a value. */
+static uint32_t bound_grows(const Machine *m, const Core *h) {
+  if (domain_global(m, h, "wLen"))
+    return 1u;
+  return domain_global(m, h, "amAdd") || domain_global(m, h, "htAdd") || domain_global(m, h, "amScale") || domain_global(m, h, "htScale") ? 2u : 0u;
+}
+
+static Bound bound_term(const BoundCx *x, const Core *t, uint32_t depth);
+
+/* wStart (LEN 0) or wLen (LEN 1) of the Window term W. */
+static Bound bound_window(const BoundCx *x, const Core *w, uint32_t depth, int len) {
+  if (w != NULL && w->kind == CORE_GLOBAL && x->m->defs[w->index].origin == ORIGIN_PROGRAM)
+    return bound_window(x, x->m->defs[w->index].body, 0u, len);
+  if (core_op_is(w, OP_CTOR) && w->inst == x->window && w->argc == 2u)
+    return len ? bound_add(bound_term(x, w->args[1], depth), bound_of(1u)) : bound_term(x, w->args[0], depth);
+  if (w != NULL && w->kind == CORE_VAR && w->index < depth && depth - 1u - w->index < x->params)
+    return len ? bound_of((uint64_t)1 << 32) : bound_of(0xffffffffu);
+  return len ? bound_add(bound_word(), bound_of(1u)) : bound_word();
+}
+
+/* The table bound of the program def D. */
+static Bound bound_table(const DefInfo *d) {
+  Bound b;
+  b.hi = d->bound_hi;
+  b.lo = d->bound_lo;
+  b.over = 0;
+  return b;
+}
+
+/* The bound of the spine T: the head H is a global with N arguments. */
+static Bound bound_call(const BoundCx *x, const Core *t, const Core *h, uint32_t n, uint32_t depth) {
+  const Machine *m = x->m;
+  const DefInfo *d = &m->defs[h->index];
+  BoundSig s;
+  if (n == 2u && (domain_global(m, h, "amAdd") || domain_global(m, h, "htAdd")))
+    return bound_add(bound_term(x, spine_arg(t, n, 0u), depth), bound_term(x, spine_arg(t, n, 1u), depth));
+  if (n == 2u && (domain_global(m, h, "amScale") || domain_global(m, h, "htScale")))
+    return bound_mul(bound_term(x, spine_arg(t, n, 0u), depth), bound_term(x, spine_arg(t, n, 1u), depth));
+  if (n == 2u && (domain_global(m, h, "amMax") || domain_global(m, h, "amMin")))
+    return bound_max(bound_term(x, spine_arg(t, n, 0u), depth), bound_term(x, spine_arg(t, n, 1u), depth));
+  if (n == 5u && (domain_global(m, h, "amSelect") || domain_global(m, h, "htSelect")))
+    return bound_max(bound_term(x, spine_arg(t, n, 3u), depth), bound_term(x, spine_arg(t, n, 4u), depth));
+  if (n == 1u && (domain_global(m, h, "wStart") || domain_global(m, h, "wLen")))
+    return bound_window(x, spine_arg(t, n, 0u), depth, domain_global(m, h, "wLen"));
+  if (d->origin != ORIGIN_PROGRAM || d->bound_kind == 0)
+    return bound_word();
+  bound_sig(x, d->type, &s);
+  return n < s.count ? bound_word() : bound_table(d);
+}
+
+/* Q-S5-1, Q-S5-6 (a): the bound of the term T under DEPTH binders. A
+   literal has its value; a parameter has its width; another binder, and
+   any term that the rules below do not name, has the word bound. */
+static Bound bound_term(const BoundCx *x, const Core *t, uint32_t depth) {
+  uint32_t n;
+  uint32_t level;
+  const Core *h;
+  if (t == NULL)
+    return bound_word();
+  h = spine_head(t, &n);
+  if (h->kind == CORE_GLOBAL)
+    return bound_call(x, t, h, n, depth);
+  if (n != 0u)
+    return bound_word();
+  if (t->kind == CORE_LAM)
+    return bound_term(x, t->b, depth + 1u);
+  level = depth - 1u - t->index;
+  if (t->kind == CORE_VAR)
+    return t->index < depth && level < x->params && level < BOUND_PARAMS ? bound_width(x->sig.kinds[level]) : bound_word();
+  if (core_op_is(t, OP_CTOR) && (t->inst == x->am_zero || t->inst == x->ht_zero))
+    return bound_of(0u);
+  if (core_op_is(t, OP_CTOR) && (t->inst == x->am_succ || t->inst == x->ht_succ) && t->argc == 1u)
+    return bound_add(bound_term(x, t->args[0], depth), bound_of(1u));
+  return bound_word();
+}
+
+/* 1 if an argument of the spine T (N arguments) is above the width of its
+   Amount or Height parameter in S. */
+static int bound_args_above(const BoundCx *x, const Core *t, uint32_t n, uint32_t depth, const BoundSig *s) {
+  uint32_t j;
+  for (j = 0; j < n && j < s->count && j < BOUND_PARAMS; j++) {
+    const Core *arg = spine_arg(t, n, j);
+    if (s->kinds[j] == 3) {
+      if (bound_above(bound_window(x, arg, depth, 0), bound_width(2)) || bound_above(bound_window(x, arg, depth, 1), bound_of((uint64_t)1 << 32)))
+        return 1;
+    } else if (s->kinds[j] != 0 && bound_above(bound_term(x, arg, depth), bound_width(s->kinds[j])))
+      return 1;
+  }
+  return 0;
+}
+
+static int bound_walk(const BoundCx *x, const Core *t, uint32_t depth);
+
+/* The spine T with the global head H and N arguments (N is 0 for a bare
+   global). The head is not walked, only the arguments. */
+static int bound_spine(const BoundCx *x, const Core *t, const Core *h, uint32_t n, uint32_t depth) {
+  const Machine *m = x->m;
+  const DefInfo *d = &m->defs[h->index];
+  BoundSig s;
+  uint32_t j;
+  uint32_t arity = bound_grows(m, h);
+  if (arity != 0u && (n < arity || bound_term(x, t, depth).over))
+    return 1;
+  s.count = 0;
+  s.result = 0;
+  if (d->origin == ORIGIN_PROGRAM)
+    bound_sig(x, d->type, &s);
+  if ((n < s.count && bound_sig_base(&s)) || bound_args_above(x, t, n, depth, &s))
+    return 1;
+  for (j = 0; j < n; j++) {
+    if (bound_walk(x, spine_arg(t, n, j), depth))
+      return 1;
+  }
+  return 0;
+}
+
+/* Q-S5-1, Q-S5-6, Q-S5-7 (a): 1 if T has an add or a product above the
+   word, a program def call with an Amount or Height argument above the
+   width of its parameter (including Window fields), or as a value a
+   growing word (amAdd, htAdd, amScale, htScale, wLen) or a program def
+   with an Amount, Height or Window parameter. */
+static int bound_walk(const BoundCx *x, const Core *t, uint32_t depth) {
+  uint32_t i;
+  uint32_t n;
+  const Core *h;
+  if (t == NULL)
+    return 0;
+  switch (t->kind) {
+  case CORE_VAR:
+  case CORE_NAT:
+  case CORE_UNIV:
+  case CORE_IZERO:
+  case CORE_IONE:
+    return 0;
+  case CORE_GLOBAL:
+    return bound_spine(x, t, t, 0u, depth);
+  case CORE_APP:
+    h = spine_head(t, &n);
+    if (h->kind == CORE_GLOBAL)
+      return bound_spine(x, t, h, n, depth);
+    return bound_walk(x, t->a, depth) || bound_walk(x, t->b, depth);
+  case CORE_LAM:
+  case CORE_PI:
+  case CORE_SIGMA:
+  case CORE_PLAM:
+    return bound_walk(x, t->a, depth) || bound_walk(x, t->b, depth + 1u);
+  case CORE_INEG:
+  case CORE_IMEET:
+  case CORE_IJOIN:
+    return bound_walk(x, t->a, depth) || bound_walk(x, t->b, depth);
+  case CORE_PATHP:
+    return bound_walk(x, t->a, depth) || bound_walk(x, t->b, depth + 1u) || bound_walk(x, t->args[0], depth) || bound_walk(x, t->args[1], depth);
+  case CORE_PAPP:
+    return bound_walk(x, t->a, depth) || bound_walk(x, t->b, depth) || bound_walk(x, t->args[0], depth) || bound_walk(x, t->args[1], depth);
+  case CORE_OP:
+    break;
+  }
+  for (i = 0; i < t->argc; i++) {
+    if (bound_walk(x, t->args[i], depth))
+      return 1;
+  }
+  return 0;
+}
+
+/* The interval rule of a guest program def that is not a law: the walk,
+   then the table entry of Q-S5-7 (a) when the codomain is Amount or
+   Height. 0 after a refusal. */
+static int bound_def(Checker *c, DefInfo *info, const char *name, const Value *tv, const Core *body) {
+  BoundCx x;
+  Bound b;
+  const Core *t;
+  x.m = c->m;
+  x.level = c->level;
+  x.amount = find_family(c->m, "Amount");
+  x.height = find_family(c->m, "Height");
+  x.am_zero = bound_ctor(c->m, "amZero");
+  x.am_succ = bound_ctor(c->m, "amSucc");
+  x.ht_zero = bound_ctor(c->m, "htZero");
+  x.ht_succ = bound_ctor(c->m, "htSucc");
+  x.window = bound_ctor(c->m, "window");
+  bound_sig(&x, tv, &x.sig);
+  x.params = 0;
+  for (t = body; t != NULL && t->kind == CORE_LAM && x.params < x.sig.count; t = t->b)
+    x.params++;
+  if (bound_walk(&x, body, 0u))
+    return FAIL(c, "REFUSE_BOUND", "%s has an Amount or Height add, product or wLen above the 128-bit word, an argument above the width of its parameter (including Window fields), or as a value a growing word (amAdd, htAdd, amScale, htScale, wLen) or a program def with an Amount, Height or Window parameter; Q-S5-1 (a), Q-S5-6 (a), Q-S5-7 (a)", name);
+  b = bound_term(&x, body, 0u);
+  info->bound_kind = x.sig.result == 3 ? 0 : x.sig.result;
+  info->bound_hi = b.over ? UINT64_MAX : b.hi;
+  info->bound_lo = b.over ? UINT64_MAX : b.lo;
+  return 1;
+}
+
 /* Register a checked body, including the closed label cores retained by
    cocell_shape. Both callers obtain BODY from the term checker. */
 static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core *syntax_type, const Core *body) {
@@ -4022,6 +4571,20 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
   law = program ? law_uses(m, trunc, syntax_type) || law_uses(m, trunc, tc) || law_uses(m, trunc, body) : d->is_law;
   if (law && guest(c) && !law_type(m, c->level, trunc, tv))
     return FAIL(c, "REFUSE_LAW", "%s uses a law-only name (decrypt, observe, an elim, fold or projection of a sealed family) but its type is not a law (a Path or Trunc1 codomain); rule O7", d->name);
+  /* Q-S5-5 (a): a guest program reads a base type of design sec 3 only
+     through the domain words. The domain file is exempt (program), as is
+     kit mode. S8 maps the kernel code to the sec 7 codes. */
+  if (program && guest(c) && base_read(m, syntax_type, body))
+    return FAIL(c, "REFUSE_READ", "%s reads a base type (Amount, Height, Window, Token, Nullifier, Key, Sig, Commitment or Root) by an elim, a fold, a projection or a successor on a term that is not a literal; a program uses only the domain words; Q-S5-5 (a)", d->name);
+  /* Q-S4-4 (a), Q-S5-3 (a): the parameter of Sealed is a base type. */
+  if (program && guest(c) && cell_read(m, syntax_type, body))
+    return FAIL(c, "REFUSE_CELL", "%s seals a type that is not Amount, Height, Token or Sum Unit Unit (Sealed, seal, Enc, encBind or encMap); Q-S4-4 (a), Q-S5-3 (a)", d->name);
+  info->bound_kind = 0;
+  info->bound_hi = 0;
+  info->bound_lo = 0;
+  /* Q-S5-1 (a): the interval rule (OI-7). A law has no run time. */
+  if (program && guest(c) && !law_type(m, c->level, trunc, tv) && !bound_def(c, info, d->name, tv, body))
+    return 0;
   info->name = d->name;
   info->origin = d->origin;
   info->body = body;

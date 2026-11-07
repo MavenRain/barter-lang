@@ -1,0 +1,6 @@
+-- Q-S5-7 (a): a program def with an Amount parameter used as a value:
+-- REFUSE_BOUND.
+def double : Amount -> Amount := fun (a : Amount) => amAdd a a
+def apply : (Amount -> Amount) -> Amount -> Amount :=
+  fun (f : Amount -> Amount) (a : Amount) => f a
+def twiceOver : Amount -> Amount := fun (a : Amount) => apply double a

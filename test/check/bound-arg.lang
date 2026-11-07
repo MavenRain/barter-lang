@@ -1,0 +1,6 @@
+-- Q-S5-7 (a): an argument above the width of its Amount parameter
+-- (amAdd a a is above 2^64 - 1): REFUSE_BOUND.
+def twice : Height -> Amount -> Amount :=
+  fun (k : Height) (a : Amount) => amScale k (amScale k a)
+def doubled : Height -> Amount -> Amount :=
+  fun (k : Height) (a : Amount) => twice k (amAdd a a)

@@ -1,0 +1,2 @@
+-- Passing wLen as a value could hide its implicit successor in a loop.
+def lengthWord : Window -> Height := wLen

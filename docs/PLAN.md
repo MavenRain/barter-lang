@@ -17,13 +17,14 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 to 1.6 list the questions for the USER,
+`design/DESIGN.md`. Sections 1.2 to 1.7 list the questions for the USER,
 and section 1.1 has the rulings.
 
-Status: S4 DONE (2026-11-06): the R1 former `Enc` (carrier `Sealed`) and
-the law-only `open` are in the domain over rule O7 of the kernel (section
-3). Q-S3-1 is ruled (a). Section 1.6 has the S4 questions. Next: S5 (base
-types of design sec 3).
+Status: S5 DONE (2026-11-06): the base types of design sec 3 are in the
+domain, with the read rule, the `Sealed` rule and the interval rule of
+the checker (section 4). Q-S4-1..4 and Q-S5-1..8 are ruled (a). Section
+1.7 has the S5 questions; Q-S5-9 and Q-S5-10 are open. Next: S6 (swap
+operations and laws S1, S2, S3, S5, N1).
 
 ## 1. Rulings and questions
 
@@ -84,6 +85,18 @@ types of design sec 3).
 | 2026-11-06 | Q-S2-3 "(a) Rewrite in S3 (Recommended)": S3 rewrites the ported plan citations of ratify-lang and permit-lang to text that names no plan item, or to the items of this plan. | USER, S3 |
 | 2026-11-06 | Q-S2-4 "(a) Keep until S5 (Recommended)": the QIIT test family `Charter`, `Ratified`, `ratify` and `adopt` stays until S5 changes the domain. | USER, S3 |
 | 2026-11-06 | Q-S3-1 "(a) Nat stays (Recommended)": the Nat words of the port stay kernel words for the prelude and the tests. S5 gives `Amount` and `Height` their own words (compare, select, add, a product by a public scalar), each with a static bound obligation that the checker discharges (OI-7). | USER, S4 |
+| 2026-11-06 | Q-S4-1 "(a) S8 maps codes (Recommended)": S4 keeps the kernel codes. S8 maps `REFUSE_CELL` to `REFUSE_FORMER`, and `REFUSE_LAW` on a sealed eliminator or on `open` to `REFUSE_UNSEAL` or `REFUSE_OPEN`. | USER, S5 |
+| 2026-11-06 | Q-S4-2 "(a) S6 renames (Recommended)": S6 changes the DAO slot name `Outcome` to `DaoOutcome` with the sums `Outcome` and `Verdict`. | USER, S5 |
+| 2026-11-06 | Q-S4-3 "(a) Program law may (Recommended)": a program law can name `open`. `REFUSE_OPEN` is `open` in a def that is not a law, `settle` or the tally. | USER, S5 |
+| 2026-11-06 | Q-S4-4 "(a) Base types only (Recommended)": S5 limits the parameter of `Sealed` to the base types of design sec 3 (the shape is Q-S5-3). | USER, S5 |
+| 2026-11-06 | Q-S5-1 "(a) Interval rule (Recommended)": checker constants: `Amount` 64 bits, `Height` 32 bits, target word 128 bits. The checker gives each `Amount` or `Height` term of a program an upper bound (an input at its width, a literal its value, an add the sum, a product the product) and gives `REFUSE_BOUND` when a bound passes the target word (OI-7). | USER, S5 |
+| 2026-11-06 | Q-S5-2 "(a) Height scalar (Recommended)": `amScale : Height -> Amount -> Amount` and `htScale : Height -> Height -> Height`. No product of two amounts. A sealed amount is scaled through `encMap`, so the scalar stays public. | USER, S5 |
+| 2026-11-06 | Q-S5-3 "(a) Checker rule (Recommended)": `Sealed` keeps its parameter. In a program, `Sealed X`, `Enc X` or `seal X` needs X in the list `Amount`, `Height`, `Token`, `Sum Unit Unit` (the sealed Bool of `cross`); another X gives `REFUSE_CELL` (S8 maps it to `REFUSE_FORMER`, Q-S4-1 (a)). | USER, S5 |
+| 2026-11-06 | Q-S5-4 "(a) Scalars + opaque (Recommended)": S5 builds `Amount`, `Height`, `Window` (start, length > 0), `Token` (decidable equality), `Nullifier` and the opaque `Key`, `Sig`, `Commitment` and `Root`. The records `Intent`, `Quote`, `Transfer` and `Fill` go to S6; `Statement` and `Certificate` go to S7. | USER, S5 |
+| 2026-11-06 | Q-S5-5 (a) (Recommended): a direct read of a base family in a program (an elim, a fold or a projection of `Amount`, `Height`, `Window`, `Token`, `Nullifier`, `Key`, `Sig`, `Commitment` or `Root`, or `amSucc` or `htSucc` on a term that is not a literal) gives the new kernel code `REFUSE_READ`. S8 maps it to the codes of section 7 (`REFUSE_DIV` for `Amount` and `Height`), the shape of Q-S4-1 (a). | USER, S5 |
+| 2026-11-06 | Q-S5-6 (a) (Recommended): in the interval rule, a variable that is not a parameter of the program def (a lambda binder in the body, a case binder of an elim or a fold such as `ih`) has the bound 2^128 - 1 (the word). Thus an elim loop cannot hide an iterated product. | USER, S5 |
+| 2026-11-06 | Q-S5-7 (a) (Recommended): a program def that gives an `Amount` or a `Height` keeps its bound (its parameters at their widths) in a table. At a call, each `Amount` or `Height` argument must have a bound at most the width of its parameter, else `REFUSE_BOUND`. A program def with an `Amount` or `Height` parameter that is used as a value (not a call with all its arguments) gives `REFUSE_BOUND`. | USER, S5 |
+| 2026-11-06 | Q-S5-8 (a) (Recommended): the test block family `Window` of the port becomes `Shutter`; the name `Window` is the base type of design sec 3. | USER, S5 |
 
 The seed is `bin/new-lang.sh barter-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -304,13 +317,14 @@ law (rule O7). S4 keeps the kernel codes. (a) S8 (the refusal codes) maps
 the kernel codes to the section 7 codes: `REFUSE_CELL` to
 `REFUSE_FORMER`, and `REFUSE_LAW` on a sealed eliminator or on `open` to
 `REFUSE_UNSEAL` or `REFUSE_OPEN` (Recommended). (b) S5 changes the codes
-before the base types come.
+before the base types come. RULED (a).
 
 Q-S4-2 The name `Outcome`. The DAO signature slot of the kernel is
 `Outcome` (`SIGNATURE` in `src/front/check.c`). The design sum `Outcome`
 needs the name. gavel-lang b2da56f changes the slot name to `DaoOutcome`
 (3 sites in the checker, 72 fixture lines). (a) S6 takes the new name with
 the sums `Outcome` and `Verdict` (Recommended). (b) S5 takes the new name.
+RULED (a).
 
 Q-S4-3 `open` in a law. `open` is law-only: a program def that names it
 must be a law, and a law has no run time. Section 7 says that
@@ -318,13 +332,87 @@ must be a law, and a law has no run time. Section 7 says that
 can name `open` (the law `openTwo` of `examples/enc.lang`). `REFUSE_OPEN`
 is `open` in a def that is not a law, `settle` or the tally
 (Recommended). (b) Only the domain laws can name `open`, and the checker
-refuses a program law that names it.
+refuses a program law that names it. RULED (a).
 
 Q-S4-4 The parameter of `Sealed`. S4 declares
 `sealed family Sealed (A : Type 0)`, so `Enc` takes any type of universe
 0. The gavel-lang R1 table admits a base type only. (a) S5 limits the
 parameter of `Sealed` to the base types of design sec 3 (Recommended).
-(b) Keep any type of universe 0.
+(b) Keep any type of universe 0. RULED (a).
+
+### 1.7 Questions for the USER (S5)
+
+Q-S5-1 (OI-7) The static bound of add and product on `Amount` and
+`Height`. The domain types are unary families (the gavel-lang b2da56f
+`Amount` shape), so the kernel add and product cannot overflow; a bound
+matters at a fixed-width target (T3, T4). (a) Checker constants:
+`Amount` 64 bits, `Height` 32 bits, target word 128 bits. The checker
+gives each `Amount` or `Height` term of a program an upper bound (an
+input at its width, a literal its value, an add the sum, a product the
+product) and gives `REFUSE_BOUND` when a bound passes the target word
+(Recommended). (b) A closed literal above its width gives
+`REFUSE_BOUND`; the bound of an open term is a T3 and T4 obligation at
+S13 and S14. RULED (a).
+
+Q-S5-2 The scalar of the product. The affine test multiplies a public
+`Height` (window, t) by an `Amount` (o, startOut, minOut). (a)
+`amScale : Height -> Amount -> Amount` and
+`htScale : Height -> Height -> Height`. No product of two amounts. A
+sealed amount is scaled through `encMap`, so the scalar stays public
+(Recommended). (b) `amScale : Nat -> Amount -> Amount` and
+`htScale : Nat -> Height -> Height`. RULED (a).
+
+Q-S5-3 The shape of Q-S4-4 (a). (a) `Sealed` keeps its parameter. In a
+program, `Sealed X`, `Enc X` or `seal X` needs X in the list `Amount`,
+`Height`, `Token` and `Sum Unit Unit` (the sealed Bool of `cross`).
+Another X gives `REFUSE_CELL`, and S8 maps it to `REFUSE_FORMER`
+(Q-S4-1 (a)) (Recommended). (b) A sealed family for each base type
+(`SealedAmount`, `SealedHeight`, `SealedToken`, `SealedBool`) with no
+parameter, with `encBind`, `encMap` and `open` for each. RULED (a).
+
+Q-S5-4 The base types of S5. (a) `Amount`, `Height`, `Window` (start,
+length > 0), `Token` (decidable equality), `Nullifier`, and the opaque
+`Key`, `Sig`, `Commitment` and `Root`. The records `Intent`, `Quote`,
+`Transfer` and `Fill` go to S6 with the operations; `Statement` and
+`Certificate` go to S7 (Recommended). (b) S5 also builds the four
+records. RULED (a).
+
+Q-S5-5 A direct read of a base family in a program. An elim, a fold or
+a projection of a base family of design sec 3, or a successor on a term
+that is not a literal, can write a subtraction, a division or a read of
+an opaque value. (a) One new kernel code `REFUSE_READ`; S8 maps it to
+the codes of section 7 (`REFUSE_DIV` for `Amount` and `Height`), the
+shape of Q-S4-1 (a) (Recommended). RULED (a).
+
+Q-S5-6 The bound of a binder in the interval rule. (a) A variable that
+is not a parameter of the program def (a lambda binder in the body, a
+case binder of an elim or a fold such as `ih`) has the bound 2^128 - 1
+(the word). Thus an elim loop cannot hide an iterated product, and
+`examples/enc.lang` maps with `amMax`, not `amAdd` (Recommended).
+RULED (a).
+
+Q-S5-7 The bound across a call. (a) A program def that gives an
+`Amount` or a `Height` keeps its bound (its parameters at their widths)
+in a table. At a call, each `Amount` or `Height` argument must have a
+bound at most the width of its parameter, else `REFUSE_BOUND`. A program
+def with an `Amount` or `Height` parameter that is used as a value gives
+`REFUSE_BOUND` (Recommended). RULED (a).
+
+Q-S5-8 The name `Window`. The port has a test block family `Window`, and
+design sec 3 names a base type `Window`. (a) The test block family
+becomes `Shutter`; `Window` is the design type (Recommended). RULED (a).
+
+Q-S5-9 A word operation as a value. `amAdd`, `htAdd`, `amScale` or
+`htScale` used as a value (not a call with 2 arguments) gives
+`REFUSE_BOUND` (built; `test/check/bound-word.lang`). Through a function
+variable, an elim loop can iterate an add with no bound. (a) Keep the
+refusal (Recommended). (b) Admit it with another bound rule.
+
+Q-S5-10 Guest values of `Token`, `Nullifier`, `Key`, `Sig`, `Commitment`
+and `Root`. A guest program cannot write one: the field is `Nat`, and a
+`Nat` literal is a kit item (`REFUSE_KIT`). (a) These values come only
+as inputs (a parameter or the state); no change (Recommended). (b) A
+domain word or a literal form for each.
 
 ## 2. The reading of R0: no runtime error
 
@@ -349,7 +437,7 @@ total, and every failure in the domain is a value.
   the total Nat words of gavel-lang 86c2f30: the src tree of gavel-lang
   86c2f30 is equal to the src tree of this port, so S3 ports no C code.
   Q-S3-1 (a): the Nat words stay kernel words, and S5 gives `Amount`
-  and `Height` their own words.
+  and `Height` their own words (section 4).
 - Host input that does not decode is a `reject`, never a trap (permit-lang
   `test/notraptool.c` precedent).
 - S3 changed the kit row "a trap is equal to a trap" (Q-S0-33 (a)): a
@@ -399,6 +487,63 @@ check, the WRK rounds of one member (Q-S1-2 (a)) and ChaCha20 over the
 run seed (Q-S1-4 (a)). quorum-lang `src/crypto` is the reference and a C
 oracle in the gate (Q-S1-5 (a)). `barterd` has no crypto code.
 
+S5 (2026-11-06) builds the base types of design sec 3 at the end of
+`domain/domain.lang` (Q-S5-4 (a)). `Amount` and `Height` are unary
+families (zero and successor). The words of `Amount` are `amLe`,
+`amSelect`, `amMax`, `amMin`, `amAdd` and `amScale`; the words of
+`Height` are `htLe`, `htSelect`, `htAdd` and `htScale`. The scalar of a
+product is a public `Height` (Q-S5-2 (a)). No word subtracts or divides.
+`Window` has a start and a length above 0 (`wStart`, `wLen`, the law
+`wLenPos`). `Token` and `Nullifier` have a decidable equality (`tkEq`,
+`nfEq`). `Key`, `Sig`, `Commitment` and `Root` are opaque. The laws of
+the words are paths by elim. The test block family of the port is now
+`Shutter` (Q-S5-8 (a)). The QIIT test family of Q-S2-4 (a) stays as
+kernel test data.
+
+The checker has three S5 rules. Each applies to a guest program only:
+
+- The read rule (Q-S5-5 (a)). A program reads a base type only through
+  its words. An elim, a fold or a projection of a base family, or
+  `amSucc` or `htSucc` on a term that is not a literal, gives
+  `REFUSE_READ`.
+- The `Sealed` rule (Q-S4-4 (a), Q-S5-3 (a)). `Sealed X`, `Enc X`,
+  `seal X`, `encBind` and `encMap` need X in `Amount`, `Height`, `Token`
+  and `Sum Unit Unit`. Another X gives `REFUSE_CELL`.
+- The interval rule (OI-7; Q-S5-1, Q-S5-6 and Q-S5-7 (a)). The widths
+  are 2^64 - 1 for `Amount` and 2^32 - 1 for `Height`; the target word
+  is 2^128 - 1. The checker gives each `Amount` or `Height` term of a
+  program def an upper bound: a parameter of the def its width, another
+  binder (a lambda binder in the body, a case binder such as `ih`) the
+  word, a literal its value, an add the sum, a product the product,
+  `amMax`, `amMin` and a select the larger bound. A bound above the word
+  gives `REFUSE_BOUND`. A program def that gives an `Amount` or a
+  `Height` keeps its bound in a table, and a call with all its arguments
+  takes that bound. At a call, an `Amount` or `Height` argument with a
+  bound above the width of its parameter gives `REFUSE_BOUND`. A word
+  operation (`amAdd`, `htAdd`, `amScale`, `htScale`, `wLen`) or a program def
+  with an `Amount`, `Height` or `Window` parameter that is used as a value, not in
+  a call with all its arguments, gives `REFUSE_BOUND` (Q-S5-9 is open). A
+  law has no run time, so the interval rule does not apply to a law. For
+  example, `wLen w` of a `Window` parameter `w` has the bound 2^32, above
+  the `Height` width, so it gives `REFUSE_BOUND` as a `Height` argument of
+  a program def.
+
+S5 review checks the assumptions behind Window bounds at calls: a Window
+argument must have a start and a length predecessor within 32 bits.
+Closed Window definitions are followed to their constructors; an unknown
+field gets the word bound. The implicit successor in `wLen` is checked
+against the word, including in loops. `Enc`, `encBind` and `encMap` must
+receive their base type arguments before they can be passed as values,
+so a higher-order call cannot instantiate `Enc` at an unsupported type.
+
+The rows: `examples/base.lang`, `examples/enc.lang` (now at `Amount`),
+the `test/check` files `read-amount`, `read-height` and `read-token`
+(`REFUSE_READ`), `bound-chain`, `bound-helper`, `bound-arg`,
+`bound-loop`, `bound-value` and `bound-word` (`REFUSE_BOUND`), `enc-size`
+(`REFUSE_CELL`), and 18 eval rows of `base`. Review regressions add
+`bound-window-{arg,length,loop,unknown,value,word}` (`REFUSE_BOUND`) and
+`enc-type-value` (`REFUSE_CELL`), plus valid Window helper evaluations.
+
 ## 5. Time
 
 Progress is log height (Q-S0-8). A decay `Window` starts at a height and
@@ -444,6 +589,13 @@ check --json` gives each with a fix hint.
 | `REFUSE_CKKS` | Approximate arithmetic. |
 | `REFUSE_LAW` | A stated DISCHARGED law that the checker cannot prove. |
 | `REFUSE_WORD` | A user program that names `Word` or a `Word` operation (Q-S0-17 (b)). |
+
+Kernel codes. The checker of the port also gives codes that are not in
+this table. S8 maps them: `REFUSE_CELL` to `REFUSE_FORMER`, `REFUSE_LAW`
+on a sealed eliminator or on `open` to `REFUSE_UNSEAL` or `REFUSE_OPEN`
+(Q-S4-1 (a)), and `REFUSE_READ` to `REFUSE_DIV` for `Amount` and
+`Height` (Q-S5-5 (a)). The code of `REFUSE_READ` on the other base types
+is fixed at S8.
 
 ## 8. Route
 
@@ -595,8 +747,8 @@ gate; logs that are kept come from a serial run.
 | S2 | Port the ratify-lang kernel at a2322ef (Q-S0-18 (a)); survey first | DONE (2026-11-06) |
 | S3 | Total arithmetic, the trap row (Q-S0-2, Q-S0-33) | DONE (2026-11-06) |
 | S4 | R1 formers, `Enc` and `open` (Q-S0-3) | DONE (2026-11-06) |
-| S5 | Base types of design sec 3 | NEXT |
-| S6 | Swap operations and laws S1, S2, S3, S5, N1 | |
+| S5 | Base types of design sec 3 | DONE (2026-11-06) |
+| S6 | Swap operations and laws S1, S2, S3, S5, N1 | NEXT |
 | S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3 | |
 | S8 | Refusal codes, `check --json`, `langc fmt` | |
 | S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD`, the BN254 field and curve, Poseidon (Q-S0-13 (a)), the signature check (OI-17), the C oracle rows (Q-S1-5 (a)) | |
@@ -635,7 +787,8 @@ and S14b. S9 needs S8b to S8d.
 - OI-6 The decoy bundle: its size and the meaning of the sealed decoy
   index (design line 65 of `design/intent-swap-design.md`).
 - OI-7 The bit width of `Amount` and `Height`, so that the products of the
-  affine test have a static bound.
+  affine test have a static bound. Q-S5-1 (a) rules it (section
+  1.7). S5 builds the interval rule (section 4).
 - OI-8 Deposits and withdrawals: the design escrows on chain. Off chain,
   the ledger needs deposit and withdraw entries in the log. Their shape is
   a question for S5.

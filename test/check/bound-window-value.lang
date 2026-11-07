@@ -1,0 +1,7 @@
+-- A helper with a Window parameter cannot escape its field-width checks
+-- through a higher-order call.
+def readStart : Window -> Height := fun (w : Window) => wStart w
+def applyWindow : (Window -> Height) -> Window -> Height :=
+  fun (f : Window -> Height) (w : Window) => f w
+def hiddenStart : Window -> Height :=
+  fun (w : Window) => applyWindow readStart w

@@ -1,0 +1,5 @@
+-- A local Window binder has no field-width proof. Its length may exceed
+-- the word because wLen adds one to a word-sized predecessor.
+def unknownLength : Size -> Window :=
+  fun (n : Size) => elim (fun (s : Size) => Window) (window htZero htZero)
+    (fun (p : Size) (ih : Window) => window (wLen ih) htZero) n
