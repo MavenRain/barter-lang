@@ -17,14 +17,15 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 to 1.7 list the questions for the USER,
+`design/DESIGN.md`. Sections 1.2 to 1.8 list the questions for the USER,
 and section 1.1 has the rulings.
 
-Status: S5 DONE (2026-11-06): the base types of design sec 3 are in the
-domain, with the read rule, the `Sealed` rule and the interval rule of
-the checker (section 4). Q-S4-1..4 and Q-S5-1..8 are ruled (a). Section
-1.7 has the S5 questions; Q-S5-9 and Q-S5-10 are open. Next: S6 (swap
-operations and laws S1, S2, S3, S5, N1).
+Status: S6 DONE (2026-11-07): the swap records and sums, `settle` with
+the decay test, and the laws S1, S2, S3, S5 and N1 are in the domain
+(sections 3 and 6), with two field rules in the checker (section 4).
+Q-S4-1..4, Q-S5-1..10 and Q-S6-1..6 are ruled (a). Section 1.8 has the
+S6 questions, all ruled. Next: S7 (governance: `Params`, `amend`,
+`replay`, laws G1 to G3).
 
 ## 1. Rulings and questions
 
@@ -97,6 +98,15 @@ operations and laws S1, S2, S3, S5, N1).
 | 2026-11-06 | Q-S5-6 (a) (Recommended): in the interval rule, a variable that is not a parameter of the program def (a lambda binder in the body, a case binder of an elim or a fold such as `ih`) has the bound 2^128 - 1 (the word). Thus an elim loop cannot hide an iterated product. | USER, S5 |
 | 2026-11-06 | Q-S5-7 (a) (Recommended): a program def that gives an `Amount` or a `Height` keeps its bound (its parameters at their widths) in a table. At a call, each `Amount` or `Height` argument must have a bound at most the width of its parameter, else `REFUSE_BOUND`. A program def with an `Amount` or `Height` parameter that is used as a value (not a call with all its arguments) gives `REFUSE_BOUND`. | USER, S5 |
 | 2026-11-06 | Q-S5-8 (a) (Recommended): the test block family `Window` of the port becomes `Shutter`; the name `Window` is the base type of design sec 3. | USER, S5 |
+| 2026-11-07 | S6 base: the USER commit e4454c9 (tree 92a3ad4c) is the base of S6. It adds S5 review fixes to the S5 tree that was staged (7b3f3810): `Window` bounds at calls, the `Enc` type-argument rule, 7 `test/check` refusals and 2 eval rows. The gate counts on e4454c9 are the S5 counts, but `check refusals: 177 checked` and `evals: 99 checked`. | USER, S6 |
+| 2026-11-07 | Q-S5-9 (a) (Recommended): keep the refusal. A word operation (`amAdd`, `htAdd`, `amScale`, `htScale` or `wLen`) used as a value, not in a call with all its arguments, gives `REFUSE_BOUND`. | USER, S6 |
+| 2026-11-07 | Q-S5-10 (a) (Recommended): a guest program gets a `Token`, `Nullifier`, `Key`, `Sig`, `Commitment` or `Root` value only as an input (a parameter or the state). No change. | USER, S6 |
+| 2026-11-07 | Q-S6-1 (a) (Recommended): the interval rule gives a projection of a record field of type `Amount` or `Height` its width (2^64 - 1 or 2^32 - 1) when the record is a parameter of the def. | USER, S6 |
+| 2026-11-07 | Q-S6-2 (a) (Recommended): the interval rule gives a projection of a `Window` field of a parameter record the widths of a `Window` parameter (start 2^32 - 1, length 2^32). | USER, S6 |
+| 2026-11-07 | Q-S6-3 (a) (Recommended): `cross` uses the domain word `encMap2`, the map of two sealed values. The domain defines it by `encBind`; T3 and T4 read it as one affine circuit with no bind. | USER, S6 |
+| 2026-11-07 | Q-S6-4 (a) (Recommended): N1 is N1a (a spent nullifier gives `reject Outcome reused`, DISCHARGED) and closed `refl` rows and eval rows for the spend direction. The full replay form comes in S7. The ids stay `Nat`. | USER, S6 |
+| 2026-11-07 | Q-S6-5 (a) (Recommended): S2 is the path from the open of `cross` to `decayAt` of the open values (DISCHARGED by elim), and closed rows for the arithmetic reading. | USER, S6 |
+| 2026-11-07 | Q-S6-6 (a) (Recommended): the S6 `settle` uses stand-ins: `Spent` for the ledger, the plain `open` for the certified open, `sgVrf` for the proof check, and `badPair` for equal tokens until the S7 `Params`. | USER, S6 |
 
 The seed is `bin/new-lang.sh barter-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -406,13 +416,61 @@ Q-S5-9 A word operation as a value. `amAdd`, `htAdd`, `amScale` or
 `htScale` used as a value (not a call with 2 arguments) gives
 `REFUSE_BOUND` (built; `test/check/bound-word.lang`). Through a function
 variable, an elim loop can iterate an add with no bound. (a) Keep the
-refusal (Recommended). (b) Admit it with another bound rule.
+refusal (Recommended). (b) Admit it with another bound rule. RULED (a).
 
 Q-S5-10 Guest values of `Token`, `Nullifier`, `Key`, `Sig`, `Commitment`
 and `Root`. A guest program cannot write one: the field is `Nat`, and a
 `Nat` literal is a kit item (`REFUSE_KIT`). (a) These values come only
 as inputs (a parameter or the state); no change (Recommended). (b) A
-domain word or a literal form for each.
+domain word or a literal form for each. RULED (a).
+
+### 1.8 Questions for the USER (S6)
+
+Q-S6-1 The bound of a record field. Under Q-S5-6 (a), a projection of a
+record field at an `Amount` or `Height` slot is not a parameter, so it has
+the word bound (2^128 - 1). Then `amScale t (startOut i)` of an `Intent`
+parameter `i` gives `REFUSE_BOUND`. (a) The interval rule gives a
+projection of a record field of type `Amount` or `Height` its width when
+the record is a parameter of the def (Recommended). (b) The records hold
+the fields at the word, and a program bounds each field with `amMin`
+against a literal before a product. RULED (a).
+
+Q-S6-2 The bound of a `Window` field. `wLen (itWindow i)` of an `Intent`
+parameter `i` falls to the word bound plus one in `bound_window`, and
+`itWindow i` as a `Window` argument is above the width. (a) A projection
+of a `Window` field of a parameter record has the widths of a `Window`
+parameter (start 2^32 - 1, length 2^32) (Recommended). (b) A program
+reads a window only from a `Window` parameter. RULED (a).
+
+Q-S6-3 The two sealed values of `cross`. Design sec 4.1 reads the decay
+test as one affine circuit without a bind. (a) A domain word `encMap2`
+maps two sealed values; the domain defines it by `encBind`, and T3 and T4
+read it as one circuit (Recommended). (b) `cross` uses `encBind`, and the
+text "without bind" of design sec 4.1 is a target note. RULED (a).
+
+Q-S6-4 The spend direction of N1. `nfId` is a `Nat`, `Nat` has no elim,
+and `natEq n n` of a variable `n` does not reduce, so "after a settle the
+nullifier is spent" has no general proof. (a) N1 is N1a (a spent
+nullifier gives `reject Outcome reused`, DISCHARGED) and closed `refl`
+rows and eval rows for the spend direction; the full replay form comes in
+S7 (Recommended). (b) `nfId` and `tokId` become `Size`. Then a guest
+program can make `nullifier sz0` with no `Nat` literal, which breaks
+Q-S5-10 (a), and the IR form of `Token` and `Nullifier` changes.
+RULED (a).
+
+Q-S6-5 The depth of S2. (a) S2 is the path from the open of `cross` to
+`decayAt` of the open values (DISCHARGED by elim), and closed rows for
+the arithmetic reading (the floor is `startOut` before the start and
+`minOut` after the end) (Recommended). (b) Also the elim lemmas of the
+arithmetic reading (`amScale` over `htAdd`, the cancel of `amLe` over
+`amAdd` and over `amScale`). RULED (a).
+
+Q-S6-6 The stand-ins of `settle`. The ledger (S7 `replay`), the certified
+open (S7) and the proof check (S8b) come in later slices. (a) The S6
+`settle` uses `Spent` for the ledger, the plain `open` for the certified
+open, `sgVrf` for the proof check and `badPair` for equal tokens until
+the S7 `Params`; S7 and S8b replace each (Recommended). (b) `settle`
+waits for S7. RULED (a).
 
 ## 2. The reading of R0: no runtime error
 
@@ -468,6 +526,43 @@ gives `REFUSE_LAW` (Q-S4-1). The rows: `examples/enc.lang`,
 `test/check/unseal-wrong.lang`, `test/check/open-wrong.lang` and two eval
 rows.
 
+S6 (2026-11-07) builds the swap of design sec 4 at the end of
+`domain/domain.lang`. The records are `Intent`, `Quote`, `Transfer` and
+`Fill`; each field name has the prefix of its record (`it`, `qt`, `tr`,
+`fl`). `amtIn` and `minOut` of an intent and the quote output are
+`Sealed Amount`, and `startOut` is public. The decoy index is a
+`Sealed Height` (OI-6). The sums:
+
+- `Verdict A` is `accept (vdVal : A) | reject (vdWhy : Reason)`. The
+  value field is `vdVal`, because `vdOk` is the name of a law.
+- `Outcome` is `settled (stIn : Transfer) (stOut : Transfer) |
+  unfilled`. `unfilled` comes with the replay of S7. The DAO slot
+  `Outcome` of the kit is now `DaoOutcome` (Q-S4-2 (a)).
+- `Reason` has nine reasons. S6 uses `reused`, `expired`, `badPair`,
+  `badProof` and `belowFloor`. `badCert`, `belowTMin` and `badPrice`
+  come with S7, and `badShare` comes with S8b.
+- `Spent` is a list of nullifiers, a stand-in for the ledger of S7
+  (Q-S6-6 (a)).
+
+The words: `vdCheck A s w v` is `v` when the flag `s` says yes, else
+`reject A w`. `spHas n l` says yes when the nullifier `n` is in `l`.
+`sgVrf` is a stand-in for the S8b proof check. `encMap2` maps a word of
+two arguments over two sealed values (Q-S6-3 (a)). `wClamp` clamps a
+height into a window. `decayTest` is the decay floor of design sec 4
+with no subtraction and no division; each side is below 2^98, in the
+word. `decayAt` applies it to an intent at a height, and `cross` is its
+sealed form over the quote output and `minOut`. `settleOut` gives the
+two transfers of a fill.
+
+`settle l i q h` is a chain of five checks, with the first check
+outermost: `reused` (`spHas`), `expired` (the deadline), `badPair`
+(equal tokens), `badProof` (`sgVrf`) and `belowFloor` (the open of
+`cross`). Each tail of the chain is a named def: `settleRest` (checks 2
+to 5), `settlePair` (checks 3 to 5), `settleProof` (checks 4 and 5) and
+`settleFloor` (check 5). When all checks pass, the verdict is
+`accept Outcome (settleOut i q)`. In S6, `settle` opens with the plain
+`open`; S7 puts a certificate before the open (Q-S6-6 (a)).
+
 ## 4. The minimal base signature (R2)
 
 R2 admits what the swap and its governance need: the base types of design
@@ -522,7 +617,7 @@ The checker has three S5 rules. Each applies to a guest program only:
   bound above the width of its parameter gives `REFUSE_BOUND`. A word
   operation (`amAdd`, `htAdd`, `amScale`, `htScale`, `wLen`) or a program def
   with an `Amount`, `Height` or `Window` parameter that is used as a value, not in
-  a call with all its arguments, gives `REFUSE_BOUND` (Q-S5-9 is open). A
+  a call with all its arguments, gives `REFUSE_BOUND` (Q-S5-9 (a)). A
   law has no run time, so the interval rule does not apply to a law. For
   example, `wLen w` of a `Window` parameter `w` has the bound 2^32, above
   the `Height` width, so it gives `REFUSE_BOUND` as a `Height` argument of
@@ -543,6 +638,40 @@ the `test/check` files `read-amount`, `read-height` and `read-token`
 (`REFUSE_CELL`), and 18 eval rows of `base`. Review regressions add
 `bound-window-{arg,length,loop,unknown,value,word}` (`REFUSE_BOUND`) and
 `enc-type-value` (`REFUSE_CELL`), plus valid Window helper evaluations.
+
+S6 adds two field rules to the interval rule (Q-S6-1 (a), Q-S6-2 (a)).
+A projection of an `Amount` or `Height` field of a record that is a
+parameter of the def has the width of the field. A projection of a
+`Window` field of a parameter record has the widths of a `Window`
+parameter (start 2^32 - 1, length 2^32). A field of a record that is
+not a parameter (for example a case binder) has the word bound. The
+rows: `examples/swap.lang` (the fields of an `Intent` parameter) and the
+`test/check` files `bound-field-binder` and `bound-field-window`
+(`REFUSE_BOUND`).
+
+At a call to a program def with a record parameter, its direct `Amount`,
+`Height` and `Window` fields must retain these input widths. A parameter
+record can be forwarded; a constructor (including a closed program def)
+is checked field by field. A computed record has no field-bound summary
+and is refused at such a call. A program def with a bounded record
+parameter cannot escape as a value or a partial application. These checks
+prevent a record from hiding a widened value and narrowing its bound at
+the next projection. The `bound-record-{amount,height,window,call,value}`
+refusals cover these cases; `examples/swap.lang` also checks forwarding
+and reconstruction at the input widths. Fields beyond the first 64
+parameters use the word bound, matching the bound table's capacity.
+
+The guest calls to `wClamp`, `decayTest`, `decayAt`, `cross` and the settle
+chain also check the bounds used by their domain arithmetic. `decayTest`
+admits a length up to 2^32 and a clamped height up to 2^33 - 1; its start
+and amount arguments retain their input widths. Direct sealed `Amount`
+and `Height` fields and program parameters retain their payload widths
+at calls. A literal seal is checked at its payload; a computed sealed
+value has no payload-bound summary and is refused at these calls.
+The `bound-decay-{args,value}`, `bound-cross-sealed`,
+`bound-settle-sealed` and `bound-sealed-arg` refusals prevent the hidden
+products from exceeding the word. `inputCross` and `inputSettle` in
+`examples/swap.lang` check calls on external inputs.
 
 ## 5. Time
 
@@ -568,6 +697,39 @@ Proof notes. S2: the affine test is equal to the decay path at each height
 (Hedberg, then arithmetic). S5: both legs are in one log entry, so
 atomicity is refl. G1: by induction on the log. G2 and G3: by the type of
 `Params` and the height order. N1: by the replay of the nullifier set.
+
+S6 (2026-11-07) discharges S1, S2, S3, S5 and N1. Each law is a
+`law def` in `domain/domain.lang`, and the kernel checks each proof. Two
+steps carry the S1 proofs: `vdOk` (a check with the flag yes gives the
+rest of the chain) and `vdBad` (a check with the flag no gives `reject`
+with its reason). Each step is one `cong` on the flag path. The kernel
+unfolds the named tails of `settle`, thus a `trans` goes down the chain
+one check at a time.
+
+| Law | Defs | Statement | Proof |
+|---|---|---|---|
+| S1 | `s1Accept` | The five flags at yes give `settle l i q h` = `accept Outcome (settleOut i q)`. | A `trans` chain of five `vdOk`. |
+| S1 | `s1Expired`, `s1BadPair`, `s1BadProof`, `s1BelowFloor` | The flags before a check at yes and the flag of the check at no give `reject Outcome` with the reason of the check. | A `vdOk` prefix, then `vdBad`. |
+| N1 | `n1Reused` | `spHas (itNf i) l` at yes gives `reject Outcome reused` (N1a, Q-S6-4 (a)). | One `cong`. |
+| S2 | `openMap2`, `s2Cross` | The open of `encMap2 A B C g m n` is `g` of the open values. The open of `cross i q h` is `decayAt` of the open quote output and the open `minOut` (Q-S6-5 (a)). | Elim on `m`, then on `n`, then `refl`. `s2Cross` is `openMap2` at `Amount`, `Amount` and `Sum Unit Unit`. |
+| S3 | `s3Quote` | Two quotes from one solver with equal open outputs give the same `settle`. | Elim on the two sealed outputs, with a motive that is a function of the path, then `cong`. |
+| S5 | `s5Fill` | `fillOutcome f` is `settled` of the two legs of the fill `f`. | `refl`. |
+
+N1 in the replay form comes with S7 (Q-S6-4 (a)). The arithmetic reading
+of S2 (the floor is `startOut` before the start of the window and
+`minOut` after the end) has closed rows. The rows:
+
+- `examples/swap.lang`: the fields of an `Intent` parameter and
+  `vdCheck`; 3 eval rows (`notYes`, `vdKeep`, `vdStop`).
+- `examples/decay.lang`: a window with start 1 and length 2, `startOut`
+  4 and `minOut` 2. 9 eval rows of `wClamp` (below, in and above the
+  window) and `decayTest` (pass and fail at the start, the middle and the
+  end), and 5 closed `refl` laws (`clampMidRefl`, `floorStartRefl`,
+  `floorMidRefl`, `floorMidFailRefl`, `floorEndRefl`).
+- `examples/spend.lang` (kit mode): real nullifiers (`nullifier 1`,
+  `nullifier 2`), an intent and two quotes at the height 2 (floor 3).
+  The `spHas` rows and the `settle` rows (`reused`, accept with the two
+  transfers, `belowFloor`), each with a `refl` law; 5 eval rows.
 
 ## 7. Refusals
 
@@ -748,8 +910,8 @@ gate; logs that are kept come from a serial run.
 | S3 | Total arithmetic, the trap row (Q-S0-2, Q-S0-33) | DONE (2026-11-06) |
 | S4 | R1 formers, `Enc` and `open` (Q-S0-3) | DONE (2026-11-06) |
 | S5 | Base types of design sec 3 | DONE (2026-11-06) |
-| S6 | Swap operations and laws S1, S2, S3, S5, N1 | NEXT |
-| S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3 | |
+| S6 | Swap operations and laws S1, S2, S3, S5, N1 | DONE (2026-11-07) |
+| S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3; the ledger and the certified `open` in `settle` (Q-S6-6 (a)), N1 in the replay form (Q-S6-4 (a)), OI-8 | NEXT |
 | S8 | Refusal codes, `check --json`, `langc fmt` | |
 | S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD`, the BN254 field and curve, Poseidon (Q-S0-13 (a)), the signature check (OI-17), the C oracle rows (Q-S1-5 (a)) | |
 | S8c | The crypto prelude part 2 (Q-S1-1 (a)): the BN254 pairing and the Noir verifier (the T2 relations, the TFHE share proof); the run time (OI-15) | |
@@ -791,7 +953,9 @@ and S14b. S9 needs S8b to S8d.
   1.7). S5 builds the interval rule (section 4).
 - OI-8 Deposits and withdrawals: the design escrows on chain. Off chain,
   the ledger needs deposit and withdraw entries in the log. Their shape is
-  a question for S5.
+  a question for S7 (the `Log` and `replay`). S6 does not need it: a
+  `Transfer` is a token, an amount and two keys, and no S6 reason reads a
+  balance.
 - OI-9 Committee key generation (DKG): EXTERNAL or a USER step.
 - OI-10 Solver choice: the first valid quote or an auction among solvers
   (`design/intent-swap-design.md` line 103).

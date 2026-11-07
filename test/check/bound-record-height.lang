@@ -1,0 +1,4 @@
+-- A record parameter must not narrow a computed Height to 32 bits.
+def readDeadline : Intent -> Height := fun (i : Intent) => itDeadline i
+def wideHeight : Intent -> Height :=
+  fun (i : Intent) => readDeadline (intent (itInTok i) (itOutTok i) (itAmtIn i) (itMinOut i) (itDecoy i) (itStartOut i) (itWindow i) (htAdd (itDeadline i) (itDeadline i)) (itNf i) (itOwner i) (itSig i))

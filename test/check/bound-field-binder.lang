@@ -1,0 +1,5 @@
+-- An Amount field of a record that is not a parameter has the word bound
+-- (Q-S6-1 (a)), so the sum of two such fields is above the word.
+def fieldTwice : Sum Intent Intent -> Amount :=
+  fun (e : Sum Intent Intent) => elim (fun (s : Sum Intent Intent) => Amount)
+    (fun (j : Intent) => amAdd (itStartOut j) (itStartOut j)) (fun (j : Intent) => amZero) e

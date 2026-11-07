@@ -488,3 +488,193 @@ family Key := key (keyId : Nat)
 family Sig := sig (sigId : Nat)
 family Commitment := commitment (cmtId : Nat)
 family Root := root (rootId : Nat)
+-- The swap of design sec 4 (S6). Intent, Quote, Transfer and Fill are
+-- records: a family with one constructor, so each field is a projection.
+-- A domain field name is global (rule R4), so each field name has the
+-- prefix of its record. A program reads an Amount or Height field of a
+-- record parameter at its width (Q-S6-1 (a)) and a Window field of a
+-- record parameter at the Window widths (Q-S6-2 (a)). The decoy index is
+-- a Sealed Height (OI-6).
+family Intent := intent (itInTok : Token) (itOutTok : Token) (itAmtIn : Sealed Amount) (itMinOut : Sealed Amount) (itDecoy : Sealed Height) (itStartOut : Amount) (itWindow : Window) (itDeadline : Height) (itNf : Nullifier) (itOwner : Key) (itSig : Sig)
+family Quote := quote (qtOut : Sealed Amount) (qtSolver : Key)
+family Transfer := transfer (trTok : Token) (trAmt : Amount) (trFrom : Key) (trTo : Key)
+family Fill := fill (flIntent : Intent) (flQuote : Quote) (flLegIn : Transfer) (flLegOut : Transfer) (flHeight : Height)
+-- The reasons of a rejected settle. S6 uses reused, expired, badPair,
+-- badProof and belowFloor. badCert, belowTMin and badPrice come with S7,
+-- badShare with S8b.
+family Reason := badProof | badShare | expired | reused | badPair | belowFloor | badCert | belowTMin | badPrice
+-- A verdict is accept with a value or reject with a reason. The value
+-- field is vdVal, because vdOk is the name of a law of S6.
+family Verdict (A : Type 0) := accept (vdVal : A) | reject (vdWhy : Reason)
+-- The outcome of a settle is two transfers. unfilled comes with the replay
+-- of S7.
+family Outcome := settled (stIn : Transfer) (stOut : Transfer) | unfilled
+-- The spent nullifiers: a stand-in for the ledger of S7 (Q-S6-6 (a)).
+family Spent := spNil | spCons (spHead : Nullifier) (spTail : Spent)
+-- sAnd, sOr and sNot on the flag Sum Unit Unit (inr unit is "yes"): a hand
+-- port of gavel-lang 1bc4437.
+def sAnd : Sum Unit Unit -> Sum Unit Unit -> Sum Unit Unit :=
+  fun (a : Sum Unit Unit) (b : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inl unit) (fun (u : Unit) => b) a
+def sOr : Sum Unit Unit -> Sum Unit Unit -> Sum Unit Unit :=
+  fun (a : Sum Unit Unit) (b : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => b) (fun (u : Unit) => inr unit) a
+def sNot : Sum Unit Unit -> Sum Unit Unit :=
+  fun (a : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) a
+-- vdCheck A s w v is v when s says yes, else reject A w.
+def vdCheck : (A : Type 0) -> Sum Unit Unit -> Reason -> Verdict A -> Verdict A :=
+  fun (A : Type 0) (s : Sum Unit Unit) (w : Reason) (v : Verdict A) =>
+    elim (fun (k : Sum Unit Unit) => Verdict A) (fun (u : Unit) => reject A w) (fun (u : Unit) => v) s
+-- spHas n l says yes when the nullifier n is in l.
+def spHas : Nullifier -> Spent -> Sum Unit Unit :=
+  fun (n : Nullifier) (l : Spent) =>
+    elim (fun (k : Spent) => Sum Unit Unit) (inl unit) (fun (g : Nullifier) (t : Spent) (ih : Sum Unit Unit) => sOr (nfEq n g) ih) l
+-- sgVrf k g says yes when the signature g is from the key k. It is a
+-- stand-in: at S8b the match becomes the proof check.
+def sgVrf : Key -> Sig -> Sum Unit Unit :=
+  fun (k : Key) (g : Sig) => elim (fun (u : Key) => Sum Unit Unit)
+    (fun (i : Nat) => elim (fun (v : Sig) => Sum Unit Unit)
+      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) g) k
+-- encMap2 (Q-S6-3 (a)) maps a word with two arguments over two sealed
+-- values: encBind on the first value, encMap on the second value.
+def encMap2 : (A : Type 0) -> (B : Type 0) -> (C : Type 0) -> (A -> B -> C) -> Sealed A -> Sealed B -> Sealed C :=
+  fun (A : Type 0) (B : Type 0) (C : Type 0) (g : A -> B -> C) (m : Sealed A) (n : Sealed B) =>
+    encBind A C m (fun (a : A) => encMap B C (fun (b : B) => g a b) n)
+-- wClamp w h is the height h clamped into [wStart w, wStart w + wLen w].
+def wClamp : Window -> Height -> Height :=
+  fun (w : Window) (h : Height) =>
+    htSelect Height h (wStart w) (wStart w)
+      (htSelect Height (htAdd (wStart w) (wLen w)) h (htAdd (wStart w) (wLen w)) h)
+-- The decay floor of design sec 4 (Q-S6-5 (a)). At the clamped height hc
+-- the floor is so - (so - m)(hc - s)/wl, with the window start s, the
+-- window length wl, startOut so and minOut m. The test o >= floor is
+-- wl*o + hc*so + s*m >= wl*so + hc*m + s*so: it has no subtraction and
+-- no division. decayTest wl s hc o so m says yes when the quote output o
+-- is at or above the floor. Bounds: wl <= 2^32, s <= 2^32 - 1,
+-- hc < 2^33 and each amount <= 2^64 - 1, thus each product is below 2^97
+-- and each side is below 2^98, in the word.
+def decayTest : Height -> Height -> Height -> Amount -> Amount -> Amount -> Sum Unit Unit :=
+  fun (wl : Height) (s : Height) (hc : Height) (o : Amount) (so : Amount) (m : Amount) =>
+    amLe (amAdd (amScale wl so) (amAdd (amScale hc m) (amScale s so)))
+      (amAdd (amScale wl o) (amAdd (amScale hc so) (amScale s m)))
+-- decayAt i h o m is the decay test of the intent i at the height h, for
+-- the open quote output o and the open minOut m. It does not use open.
+def decayAt : Intent -> Height -> Amount -> Amount -> Sum Unit Unit :=
+  fun (i : Intent) (h : Height) (o : Amount) (m : Amount) =>
+    decayTest (wLen (itWindow i)) (wStart (itWindow i)) (wClamp (itWindow i) h) o (itStartOut i) m
+-- cross i q h is the sealed decay test: the quote output and minOut stay
+-- sealed (Q-S6-3 (a)).
+def cross : Intent -> Quote -> Height -> Sealed (Sum Unit Unit) :=
+  fun (i : Intent) (q : Quote) (h : Height) =>
+    encMap2 Amount Amount (Sum Unit Unit) (fun (o : Amount) (m : Amount) => decayAt i h o m) (qtOut q) (itMinOut i)
+-- settleOut i q is the two transfers of a fill: amtIn from the owner to
+-- the solver, and the quote output from the solver to the owner.
+def settleOut : Intent -> Quote -> Outcome :=
+  fun (i : Intent) (q : Quote) =>
+    settled (transfer (itInTok i) (open Amount (itAmtIn i)) (itOwner i) (qtSolver q))
+      (transfer (itOutTok i) (open Amount (qtOut q)) (qtSolver q) (itOwner i))
+-- settle l i q h (Q-S6-6 (a)) is a chain of checks, with the first check
+-- outermost: reused, expired, badPair, badProof, belowFloor. settleRest
+-- is the checks 2 to 5, settlePair the checks 3 to 5, settleProof the
+-- checks 4 and 5, and settleFloor the check 5: the laws S1 go down the
+-- chain one check at a time. In S6 settle opens the sealed values with the
+-- plain open; S7 puts a certificate before the open.
+def settleFloor : Intent -> Quote -> Height -> Verdict Outcome :=
+  fun (i : Intent) (q : Quote) (h : Height) =>
+    vdCheck Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleOut i q))
+def settleProof : Intent -> Quote -> Height -> Verdict Outcome :=
+  fun (i : Intent) (q : Quote) (h : Height) =>
+    vdCheck Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleFloor i q h)
+def settlePair : Intent -> Quote -> Height -> Verdict Outcome :=
+  fun (i : Intent) (q : Quote) (h : Height) =>
+    vdCheck Outcome (sNot (tkEq (itInTok i) (itOutTok i))) badPair (settleProof i q h)
+def settleRest : Intent -> Quote -> Height -> Verdict Outcome :=
+  fun (i : Intent) (q : Quote) (h : Height) =>
+    vdCheck Outcome (htLe h (itDeadline i)) expired (settlePair i q h)
+def settle : Spent -> Intent -> Quote -> Height -> Verdict Outcome :=
+  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) =>
+    vdCheck Outcome (sNot (spHas (itNf i) l)) reused (settleRest i q h)
+-- The laws of the swap (S6, design sec 4). vdOk and vdBad are the two
+-- steps down a chain of checks: a check with the flag yes gives the rest
+-- of the chain, and a check with the flag no gives reject with its reason.
+law def vdOk : (A : Type 0) -> (f : Sum Unit Unit) -> (w : Reason) -> (v : Verdict A) -> Path (Sum Unit Unit) f (inr unit) -> Path (Verdict A) (vdCheck A f w v) v :=
+  fun (A : Type 0) (f : Sum Unit Unit) (w : Reason) (v : Verdict A) (p : Path (Sum Unit Unit) f (inr unit)) =>
+    cong (fun (b : Sum Unit Unit) => vdCheck A b w v) p
+law def vdBad : (A : Type 0) -> (f : Sum Unit Unit) -> (w : Reason) -> (v : Verdict A) -> Path (Sum Unit Unit) f (inl unit) -> Path (Verdict A) (vdCheck A f w v) (reject A w) :=
+  fun (A : Type 0) (f : Sum Unit Unit) (w : Reason) (v : Verdict A) (p : Path (Sum Unit Unit) f (inl unit)) =>
+    cong (fun (b : Sum Unit Unit) => vdCheck A b w v) p
+-- S1: when the five flags of settle are yes, settle gives accept with the
+-- two transfers of settleOut. When the flags before a check are yes and
+-- the flag of that check is no, settle gives reject with its reason.
+law def s1Accept : (l : Spent) -> (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (sNot (tkEq (itInTok i) (itOutTok i))) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit) -> Path (Verdict Outcome) (settle l i q h) (accept Outcome (settleOut i q)) :=
+  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (sNot (tkEq (itInTok i) (itOutTok i))) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit)) (p5 : Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit)) =>
+    trans (Verdict Outcome) (settle l i q h) (settleRest i q h) (accept Outcome (settleOut i q))
+      (vdOk Outcome (sNot (spHas (itNf i) l)) reused (settleRest i q h) p1)
+      (trans (Verdict Outcome) (settleRest i q h) (settlePair i q h) (accept Outcome (settleOut i q))
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair i q h) p2)
+        (trans (Verdict Outcome) (settlePair i q h) (settleProof i q h) (accept Outcome (settleOut i q))
+          (vdOk Outcome (sNot (tkEq (itInTok i) (itOutTok i))) badPair (settleProof i q h) p3)
+          (trans (Verdict Outcome) (settleProof i q h) (settleFloor i q h) (accept Outcome (settleOut i q))
+            (vdOk Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleFloor i q h) p4)
+            (vdOk Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleOut i q)) p5))))
+law def s1Expired : (l : Spent) -> (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inl unit) -> Path (Verdict Outcome) (settle l i q h) (reject Outcome expired) :=
+  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit)) (z2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inl unit)) =>
+    trans (Verdict Outcome) (settle l i q h) (settleRest i q h) (reject Outcome expired)
+      (vdOk Outcome (sNot (spHas (itNf i) l)) reused (settleRest i q h) p1)
+      (vdBad Outcome (htLe h (itDeadline i)) expired (settlePair i q h) z2)
+law def s1BadPair : (l : Spent) -> (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (sNot (tkEq (itInTok i) (itOutTok i))) (inl unit) -> Path (Verdict Outcome) (settle l i q h) (reject Outcome badPair) :=
+  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (z3 : Path (Sum Unit Unit) (sNot (tkEq (itInTok i) (itOutTok i))) (inl unit)) =>
+    trans (Verdict Outcome) (settle l i q h) (settleRest i q h) (reject Outcome badPair)
+      (vdOk Outcome (sNot (spHas (itNf i) l)) reused (settleRest i q h) p1)
+      (trans (Verdict Outcome) (settleRest i q h) (settlePair i q h) (reject Outcome badPair)
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair i q h) p2)
+        (vdBad Outcome (sNot (tkEq (itInTok i) (itOutTok i))) badPair (settleProof i q h) z3))
+law def s1BadProof : (l : Spent) -> (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (sNot (tkEq (itInTok i) (itOutTok i))) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inl unit) -> Path (Verdict Outcome) (settle l i q h) (reject Outcome badProof) :=
+  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (sNot (tkEq (itInTok i) (itOutTok i))) (inr unit)) (z4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inl unit)) =>
+    trans (Verdict Outcome) (settle l i q h) (settleRest i q h) (reject Outcome badProof)
+      (vdOk Outcome (sNot (spHas (itNf i) l)) reused (settleRest i q h) p1)
+      (trans (Verdict Outcome) (settleRest i q h) (settlePair i q h) (reject Outcome badProof)
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair i q h) p2)
+        (trans (Verdict Outcome) (settlePair i q h) (settleProof i q h) (reject Outcome badProof)
+          (vdOk Outcome (sNot (tkEq (itInTok i) (itOutTok i))) badPair (settleProof i q h) p3)
+          (vdBad Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleFloor i q h) z4)))
+law def s1BelowFloor : (l : Spent) -> (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (sNot (tkEq (itInTok i) (itOutTok i))) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inl unit) -> Path (Verdict Outcome) (settle l i q h) (reject Outcome belowFloor) :=
+  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (spHas (itNf i) l)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (sNot (tkEq (itInTok i) (itOutTok i))) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit)) (z5 : Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inl unit)) =>
+    trans (Verdict Outcome) (settle l i q h) (settleRest i q h) (reject Outcome belowFloor)
+      (vdOk Outcome (sNot (spHas (itNf i) l)) reused (settleRest i q h) p1)
+      (trans (Verdict Outcome) (settleRest i q h) (settlePair i q h) (reject Outcome belowFloor)
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair i q h) p2)
+        (trans (Verdict Outcome) (settlePair i q h) (settleProof i q h) (reject Outcome belowFloor)
+          (vdOk Outcome (sNot (tkEq (itInTok i) (itOutTok i))) badPair (settleProof i q h) p3)
+          (trans (Verdict Outcome) (settleProof i q h) (settleFloor i q h) (reject Outcome belowFloor)
+            (vdOk Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleFloor i q h) p4)
+            (vdBad Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleOut i q)) z5))))
+-- N1: when the nullifier of the intent is in the spent set, settle gives
+-- reject with the reason reused. Thus a nullifier settles at most once
+-- (Q-S6-4 (a)). The replay form comes with the ledger of S7.
+law def n1Reused : (l : Spent) -> (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (spHas (itNf i) l) (inr unit) -> Path (Verdict Outcome) (settle l i q h) (reject Outcome reused) :=
+  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) (p : Path (Sum Unit Unit) (spHas (itNf i) l) (inr unit)) =>
+    cong (fun (b : Sum Unit Unit) => vdCheck Outcome (sNot b) reused (settleRest i q h)) p
+-- S2 (Q-S6-5 (a)): open of a sealed map with two arguments is the map of
+-- the open values. Thus the sealed decay test cross gives the decay test
+-- of the open quote output and the open minOut.
+law def openMap2 : (A : Type 0) -> (B : Type 0) -> (C : Type 0) -> (g : A -> B -> C) -> (m : Sealed A) -> (n : Sealed B) -> Path C (open C (encMap2 A B C g m n)) (g (open A m) (open B n)) :=
+  fun (A : Type 0) (B : Type 0) (C : Type 0) (g : A -> B -> C) (m : Sealed A) (n : Sealed B) =>
+    elim (fun (s : Sealed A) => Path C (open C (encMap2 A B C g s n)) (g (open A s) (open B n)))
+      (fun (a : A) =>
+        elim (fun (t : Sealed B) => Path C (open C (encMap2 A B C g (seal A a) t)) (g a (open B t))) (fun (b : B) => refl) n) m
+law def s2Cross : (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (decayAt i h (open Amount (qtOut q)) (open Amount (itMinOut i))) :=
+  fun (i : Intent) (q : Quote) (h : Height) =>
+    openMap2 Amount Amount (Sum Unit Unit) (fun (o : Amount) (m : Amount) => decayAt i h o m) (qtOut q) (itMinOut i)
+-- S3: two quotes from one solver with equal open outputs give equal
+-- verdicts.
+law def s3Quote : (l : Spent) -> (i : Intent) -> (k : Key) -> (h : Height) -> (m : Sealed Amount) -> (n : Sealed Amount) -> Path Amount (open Amount m) (open Amount n) -> Path (Verdict Outcome) (settle l i (quote m k) h) (settle l i (quote n k) h) :=
+  fun (l : Spent) (i : Intent) (k : Key) (h : Height) (m : Sealed Amount) (n : Sealed Amount) =>
+    elim (fun (s : Sealed Amount) => Path Amount (open Amount s) (open Amount n) -> Path (Verdict Outcome) (settle l i (quote s k) h) (settle l i (quote n k) h))
+      (fun (a : Amount) =>
+        elim (fun (t : Sealed Amount) => Path Amount a (open Amount t) -> Path (Verdict Outcome) (settle l i (quote (seal Amount a) k) h) (settle l i (quote t k) h))
+          (fun (b : Amount) (p : Path Amount a b) => cong (fun (x : Amount) => settle l i (quote (seal Amount x) k) h) p) n) m
+-- S5: the outcome of a fill entry is its two legs. Both legs are in one
+-- entry, or the entry is not in the log.
+def fillOutcome : Fill -> Outcome :=
+  fun (f : Fill) => settled (flLegIn f) (flLegOut f)
+law def s5Fill : (f : Fill) -> Path Outcome (fillOutcome f) (settled (flLegIn f) (flLegOut f)) :=
+  fun (f : Fill) => refl

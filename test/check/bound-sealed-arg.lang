@@ -1,0 +1,4 @@
+-- A sealed payload cannot be narrowed by forwarding it through a program def.
+def keepSealed : Sealed Amount -> Sealed Amount := fun (s : Sealed Amount) => s
+def wideSealed : Height -> Amount -> Sealed Amount :=
+  fun (h : Height) (a : Amount) => keepSealed (seal Amount (amScale h a))

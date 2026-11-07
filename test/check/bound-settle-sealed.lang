@@ -1,0 +1,4 @@
+-- The settle tails must not admit a quote that can overflow the floor test.
+def wideSettle : Intent -> Quote -> Height -> Amount -> Verdict Outcome :=
+  fun (i : Intent) (q : Quote) (h : Height) (a : Amount) =>
+    settleFloor i (quote (seal Amount (amScale h a)) (qtSolver q)) h

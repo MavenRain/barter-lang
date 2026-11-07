@@ -175,3 +175,15 @@ bound-window-unknown.lang REFUSE_BOUND
 bound-window-value.lang REFUSE_BOUND
 bound-window-word.lang REFUSE_BOUND
 enc-type-value.lang REFUSE_CELL
+bound-field-binder.lang REFUSE_BOUND
+bound-field-window.lang REFUSE_BOUND
+bound-record-amount.lang REFUSE_BOUND
+bound-record-height.lang REFUSE_BOUND
+bound-record-window.lang REFUSE_BOUND
+bound-record-call.lang REFUSE_BOUND
+bound-record-value.lang REFUSE_BOUND
+bound-decay-args.lang REFUSE_BOUND
+bound-cross-sealed.lang REFUSE_BOUND
+bound-settle-sealed.lang REFUSE_BOUND
+bound-sealed-arg.lang REFUSE_BOUND
+bound-decay-value.lang REFUSE_BOUND

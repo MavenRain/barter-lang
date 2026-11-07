@@ -1,0 +1,4 @@
+-- A constructor passed to a record parameter must preserve its Amount width.
+def readAmount : Transfer -> Amount := fun (t : Transfer) => trAmt t
+def wideAmount : Transfer -> Amount :=
+  fun (t : Transfer) => readAmount (transfer (trTok t) (amAdd (trAmt t) (trAmt t)) (trFrom t) (trTo t))

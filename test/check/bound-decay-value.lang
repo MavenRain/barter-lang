@@ -1,0 +1,2 @@
+-- A decay helper cannot escape the argument checks through a higher-order value.
+def escapedDecay : Sum (Height -> Height -> Height -> Amount -> Amount -> Amount -> Sum Unit Unit) Unit := inl decayTest

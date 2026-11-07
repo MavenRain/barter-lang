@@ -1,0 +1,3 @@
+-- A function that assumes record field widths cannot escape the call check.
+def readAmount : Transfer -> Amount := fun (t : Transfer) => trAmt t
+def escaped : Sum (Transfer -> Amount) Unit := inl readAmount

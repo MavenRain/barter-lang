@@ -1,0 +1,31 @@
+-- The decay floor of design sec 4 on literals (S6, Q-S6-5 (a)). The
+-- window starts at height 1 and has the length 2 (the family keeps the
+-- length minus one). startOut is 4 and minOut is 2, thus the floor is 4
+-- at or before height 1, 3 at height 2 and 2 at or after height 3.
+def win : Window := window (htSucc htZero) (htSucc htZero)
+def ht0 : Height := htZero
+def ht2 : Height := htSucc (htSucc htZero)
+def ht5 : Height := htSucc (htSucc (htSucc (htSucc (htSucc htZero))))
+def amt1 : Amount := amSucc amZero
+def amt2 : Amount := amSucc (amSucc amZero)
+def amt3 : Amount := amSucc (amSucc (amSucc amZero))
+def amt4 : Amount := amSucc (amSucc (amSucc (amSucc amZero)))
+-- wClamp keeps a height in the window.
+def clampLow : Height := wClamp win ht0
+def clampMid : Height := wClamp win ht2
+def clampHigh : Height := wClamp win ht5
+-- At or before the start the floor is startOut.
+def floorStartPass : Sum Unit Unit := decayTest (wLen win) (wStart win) (wClamp win ht0) amt4 amt4 amt2
+def floorStartFail : Sum Unit Unit := decayTest (wLen win) (wStart win) (wClamp win ht0) amt3 amt4 amt2
+-- In the window the floor is on the line from startOut to minOut.
+def floorMidPass : Sum Unit Unit := decayTest (wLen win) (wStart win) (wClamp win ht2) amt3 amt4 amt2
+def floorMidFail : Sum Unit Unit := decayTest (wLen win) (wStart win) (wClamp win ht2) amt2 amt4 amt2
+-- At or after the end the floor is minOut.
+def floorEndPass : Sum Unit Unit := decayTest (wLen win) (wStart win) (wClamp win ht5) amt2 amt4 amt2
+def floorEndFail : Sum Unit Unit := decayTest (wLen win) (wStart win) (wClamp win ht5) amt1 amt4 amt2
+-- The rows as laws: each value is a refl path.
+def clampMidRefl : Path Height clampMid ht2 := refl
+def floorStartRefl : Path (Sum Unit Unit) floorStartPass (inr unit) := refl
+def floorMidRefl : Path (Sum Unit Unit) floorMidPass (inr unit) := refl
+def floorMidFailRefl : Path (Sum Unit Unit) floorMidFail (inl unit) := refl
+def floorEndRefl : Path (Sum Unit Unit) floorEndFail (inl unit) := refl

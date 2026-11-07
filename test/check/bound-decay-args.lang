@@ -1,0 +1,4 @@
+-- Widened arguments hide products above the word inside a domain helper.
+def wideDecay : Height -> Amount -> Sum Unit Unit :=
+  fun (h : Height) (a : Amount) =>
+    decayTest (htScale h h) (htScale h h) (htScale h h) (amScale h a) (amScale h a) (amScale h a)

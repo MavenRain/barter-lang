@@ -1,0 +1,4 @@
+-- cross must preserve the width of the sealed quote amount.
+def wideCross : Intent -> Quote -> Height -> Amount -> Sealed (Sum Unit Unit) :=
+  fun (i : Intent) (q : Quote) (h : Height) (a : Amount) =>
+    cross i (quote (seal Amount (amScale h a)) (qtSolver q)) h

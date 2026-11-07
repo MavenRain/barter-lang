@@ -3800,7 +3800,7 @@ typedef struct {
 static const SigRow SIGNATURE[] = {
   {"Member", SIG_TYPE, SIG_SLOT},
   {"Choice", SIG_TYPE, SIG_SLOT},
-  {"Outcome", SIG_TYPE, SIG_SLOT},
+  {"DaoOutcome", SIG_TYPE, SIG_SLOT},
   {"Group", SIG_TYPE, SIG_SLOT},
   {"Config", SIG_TYPE, SIG_DEFINED},
   {"Orbit", SIG_TYPE, SIG_DEFINED},
@@ -3827,7 +3827,7 @@ static const Term SIG_STEP = {TERM_PI, 0, 0, NULL, 0, &SIG_CONFIG, &SIG_CONFIG};
 static const Term SIG_ACT = {TERM_PI, 0, 0, NULL, 0, &SIG_GROUP, &SIG_STEP};
 
 /* The slot types of outcomeSet (USER ruling S7 Q2) and menu (Q3). */
-static const Term SIG_OUTCOME = {TERM_VAR, 0, 0, "Outcome", 0, NULL, NULL};
+static const Term SIG_OUTCOME = {TERM_VAR, 0, 0, "DaoOutcome", 0, NULL, NULL};
 static const Term SIG_IS_SET = {TERM_VAR, 0, 0, "isSet", 0, NULL, NULL};
 static const Term SIG_OUTCOME_SET = {TERM_APP, 0, 0, NULL, 0, &SIG_IS_SET, &SIG_OUTCOME};
 static const Term SIG_CONSTITUTION = {TERM_VAR, 0, 0, "Constitution", 0, NULL, NULL};
@@ -3846,8 +3846,8 @@ typedef struct {
 
 static const OpSlot OP_SLOTS[] = {
   {"act", &SIG_ACT, {"Member", "Choice", "Group"}, NULL, "Group -> (Member -> Choice) -> Member -> Choice, after Member, Choice and Group"},
-  {"outcomeSet", &SIG_OUTCOME_SET, {"Outcome", NULL, NULL}, NULL, "isSet Outcome, after Outcome"},
-  {"menu", &SIG_MENU, {"Outcome", NULL, NULL}, "Constitution", "Outcome -> Constitution, after Outcome and the DAO prelude"}
+  {"outcomeSet", &SIG_OUTCOME_SET, {"DaoOutcome", NULL, NULL}, NULL, "isSet DaoOutcome, after DaoOutcome"},
+  {"menu", &SIG_MENU, {"DaoOutcome", NULL, NULL}, "Constitution", "DaoOutcome -> Constitution, after DaoOutcome and the DAO prelude"}
 };
 
 #define OP_SLOT_COUNT ((uint32_t)(sizeof OP_SLOTS / sizeof OP_SLOTS[0]))
@@ -4226,7 +4226,8 @@ typedef struct {
 
 /* A Pi telescope: the Pi count, the kinds of the first BOUND_PARAMS
    domains and the kind of the final codomain (0 other, 1 Amount, 2
-   Height, 3 Window). */
+   Height, 3 Window, 4 sealed Amount, 5 sealed Height, 6 + family for a
+   record with a bounded field). */
 typedef struct {
   uint32_t count;
   int kinds[BOUND_PARAMS];
@@ -4322,12 +4323,51 @@ static int bound_above(Bound a, Bound w) {
   return a.over || a.hi > w.hi || (a.hi == w.hi && a.lo > w.lo);
 }
 
+static int bound_field_kind(const BoundCx *x, const Core *t) {
+  if (!core_op_is(t, OP_FAMILY))
+    return 0;
+  if (t->inst == x->amount)
+    return 1;
+  if (t->inst == x->height)
+    return 2;
+  if (t->inst == find_family(x->m, "Sealed") && t->argc == 1u && core_op_is(t->args[0], OP_FAMILY)) {
+    if (t->args[0]->inst == x->amount)
+      return 4;
+    if (t->args[0]->inst == x->height)
+      return 5;
+  }
+  return t->inst == find_family(x->m, "Window") ? 3 : 0;
+}
+
 static int bound_kind_of(const BoundCx *x, const Value *t) {
+  const FamilyInfo *f;
+  const CtorInfo *c;
+  uint32_t i;
   if (t != NULL && is_family(t, x->amount))
     return 1;
   if (t != NULL && is_family(t, x->height))
     return 2;
-  return t != NULL && is_family(t, find_family(x->m, "Window")) ? 3 : 0;
+  if (t != NULL && is_family(t, find_family(x->m, "Window")))
+    return 3;
+  if (!val_is(t, OP_FAMILY))
+    return 0;
+  if (t->inst == find_family(x->m, "Sealed") && t->argc == 1u) {
+    if (is_family(t->args[0], x->amount))
+      return 4;
+    if (is_family(t->args[0], x->height))
+      return 5;
+  }
+  f = &x->m->families[t->inst];
+  if (f->ctor_count != 1u)
+    return 0;
+  c = &x->m->ctors[f->first_ctor];
+  if (c->interval_count != 0u)
+    return 0;
+  for (i = 0; i < c->field_count; i++) {
+    if (bound_field_kind(x, c->fields[i].type) != 0)
+      return 6 + (int)t->inst;
+  }
+  return 0;
 }
 
 static void bound_sig(const BoundCx *x, const Value *t, BoundSig *s) {
@@ -4345,7 +4385,7 @@ static void bound_sig(const BoundCx *x, const Value *t, BoundSig *s) {
   s->result = bound_kind_of(x, t);
 }
 
-/* 1 if the telescope S has an Amount, Height or Window parameter. */
+/* 1 if the telescope S has a base or record parameter with a bound. */
 static int bound_sig_base(const BoundSig *s) {
   uint32_t i;
   for (i = 0; i < s->count && i < BOUND_PARAMS; i++) {
@@ -4371,8 +4411,17 @@ static Bound bound_window(const BoundCx *x, const Core *w, uint32_t depth, int l
     return bound_window(x, x->m->defs[w->index].body, 0u, len);
   if (core_op_is(w, OP_CTOR) && w->inst == x->window && w->argc == 2u)
     return len ? bound_add(bound_term(x, w->args[1], depth), bound_of(1u)) : bound_term(x, w->args[0], depth);
-  if (w != NULL && w->kind == CORE_VAR && w->index < depth && depth - 1u - w->index < x->params)
+  if (w != NULL && w->kind == CORE_VAR && w->index < depth && depth - 1u - w->index < x->params &&
+      depth - 1u - w->index < BOUND_PARAMS)
     return len ? bound_of((uint64_t)1 << 32) : bound_of(0xffffffffu);
+  /* Q-S6-2 (a): a Window field of a record parameter has the Window
+     widths. */
+  if (core_op_is(w, OP_PROJ) && w->argc == 1u && w->args[0]->kind == CORE_VAR && w->args[0]->index < depth &&
+      depth - 1u - w->args[0]->index < x->params && depth - 1u - w->args[0]->index < BOUND_PARAMS) {
+    const Core *ft = x->m->ctors[w->inst].fields[w->field].type;
+    if (core_op_is(ft, OP_FAMILY) && ft->inst == find_family(x->m, "Window"))
+      return len ? bound_of((uint64_t)1 << 32) : bound_of(0xffffffffu);
+  }
   return len ? bound_add(bound_word(), bound_of(1u)) : bound_word();
 }
 
@@ -4400,6 +4449,10 @@ static Bound bound_call(const BoundCx *x, const Core *t, const Core *h, uint32_t
     return bound_max(bound_term(x, spine_arg(t, n, 3u), depth), bound_term(x, spine_arg(t, n, 4u), depth));
   if (n == 1u && (domain_global(m, h, "wStart") || domain_global(m, h, "wLen")))
     return bound_window(x, spine_arg(t, n, 0u), depth, domain_global(m, h, "wLen"));
+  if (n == 2u && domain_global(m, h, "wClamp")) {
+    const Core *w = spine_arg(t, n, 0u);
+    return bound_add(bound_window(x, w, depth, 0), bound_window(x, w, depth, 1));
+  }
   if (d->origin != ORIGIN_PROGRAM || d->bound_kind == 0)
     return bound_word();
   bound_sig(x, d->type, &s);
@@ -4429,16 +4482,81 @@ static Bound bound_term(const BoundCx *x, const Core *t, uint32_t depth) {
     return bound_of(0u);
   if (core_op_is(t, OP_CTOR) && (t->inst == x->am_succ || t->inst == x->ht_succ) && t->argc == 1u)
     return bound_add(bound_term(x, t->args[0], depth), bound_of(1u));
+  /* Q-S6-1 (a): an Amount or Height field of a record parameter has its
+     width. */
+  if (core_op_is(t, OP_PROJ) && t->argc == 1u && t->args[0]->kind == CORE_VAR && t->args[0]->index < depth &&
+      depth - 1u - t->args[0]->index < x->params && depth - 1u - t->args[0]->index < BOUND_PARAMS) {
+    const Core *ft = x->m->ctors[t->inst].fields[t->field].type;
+    if (core_op_is(ft, OP_FAMILY) && (ft->inst == x->amount || ft->inst == x->height))
+      return bound_width(ft->inst == x->amount ? 1 : 2);
+  }
   return bound_word();
 }
 
-/* 1 if an argument of the spine T (N arguments) is above the width of its
-   Amount or Height parameter in S. */
-static int bound_args_above(const BoundCx *x, const Core *t, uint32_t n, uint32_t depth, const BoundSig *s) {
+/* A sealed base input retains its payload width. Maps and other computed
+   sealed values have no payload-bound summary. */
+static int bound_sealed_above(const BoundCx *x, const Core *t, uint32_t depth, int kind) {
+  if (t != NULL && t->kind == CORE_GLOBAL && x->m->defs[t->index].origin == ORIGIN_PROGRAM)
+    return bound_sealed_above(x, x->m->defs[t->index].body, 0u, kind);
+  if (t != NULL && t->kind == CORE_VAR && t->index < depth && depth - 1u - t->index < x->params &&
+      depth - 1u - t->index < BOUND_PARAMS)
+    return 0;
+  if (core_op_is(t, OP_PROJ) && t->argc == 1u && t->args[0]->kind == CORE_VAR && t->args[0]->index < depth &&
+      depth - 1u - t->args[0]->index < x->params && depth - 1u - t->args[0]->index < BOUND_PARAMS &&
+      bound_field_kind(x, x->m->ctors[t->inst].fields[t->field].type) == kind)
+    return 0;
+  if (core_op_is(t, OP_CTOR) && t->inst == bound_ctor(x->m, "seal") && t->argc == 2u)
+    return bound_above(bound_term(x, t->args[1], depth), bound_width(kind == 4 ? 1 : 2));
+  return 1;
+}
+
+/* A record parameter's direct base fields have their input widths. At a
+   call, retain that assumption only for another parameter or a constructor
+   whose direct base fields fit. A computed record has no bound summary. */
+static int bound_record_above(const BoundCx *x, const Core *t, uint32_t depth, uint32_t family) {
+  const FamilyInfo *f = &x->m->families[family];
+  const CtorInfo *c = &x->m->ctors[f->first_ctor];
+  uint32_t i;
+  if (t != NULL && t->kind == CORE_GLOBAL && x->m->defs[t->index].origin == ORIGIN_PROGRAM)
+    return bound_record_above(x, x->m->defs[t->index].body, 0u, family);
+  if (t != NULL && t->kind == CORE_VAR && t->index < depth && depth - 1u - t->index < x->params &&
+      depth - 1u - t->index < BOUND_PARAMS)
+    return 0;
+  if (!core_op_is(t, OP_CTOR) || t->inst != f->first_ctor || t->argc < f->param_count + c->field_count)
+    return 1;
+  for (i = 0; i < c->field_count; i++) {
+    int kind = bound_field_kind(x, c->fields[i].type);
+    const Core *arg = t->args[f->param_count + i];
+    if (kind == 4 || kind == 5) {
+      if (bound_sealed_above(x, arg, depth, kind))
+        return 1;
+    } else if (kind == 3) {
+      if (bound_above(bound_window(x, arg, depth, 0), bound_width(2)) || bound_above(bound_window(x, arg, depth, 1), bound_of((uint64_t)1 << 32)))
+        return 1;
+    } else if (kind != 0 && bound_above(bound_term(x, arg, depth), bound_width(kind)))
+      return 1;
+  }
+  return 0;
+}
+
+/* 1 if an argument of the spine T (N arguments) exceeds a base or record
+   parameter's input widths in S. */
+static int bound_args_above(const BoundCx *x, const Core *t, const Core *h, uint32_t n, uint32_t depth, const BoundSig *s) {
   uint32_t j;
   for (j = 0; j < n && j < s->count && j < BOUND_PARAMS; j++) {
     const Core *arg = spine_arg(t, n, j);
-    if (s->kinds[j] == 3) {
+    if (domain_global(x->m, h, "decayTest") && (j == 0u || j == 2u)) {
+      /* The length includes its successor and the clamped height can
+         reach start + length. These are the bounds used by decayAt. */
+      if (bound_above(bound_term(x, arg, depth), bound_of(j == 0u ? (uint64_t)1 << 32 : ((uint64_t)1 << 33) - 1u)))
+        return 1;
+    } else if (s->kinds[j] >= 6) {
+      if (bound_record_above(x, arg, depth, (uint32_t)(s->kinds[j] - 6)))
+        return 1;
+    } else if (s->kinds[j] == 4 || s->kinds[j] == 5) {
+      if (bound_sealed_above(x, arg, depth, s->kinds[j]))
+        return 1;
+    } else if (s->kinds[j] == 3) {
       if (bound_above(bound_window(x, arg, depth, 0), bound_width(2)) || bound_above(bound_window(x, arg, depth, 1), bound_of((uint64_t)1 << 32)))
         return 1;
     } else if (s->kinds[j] != 0 && bound_above(bound_term(x, arg, depth), bound_width(s->kinds[j])))
@@ -4448,6 +4566,14 @@ static int bound_args_above(const BoundCx *x, const Core *t, uint32_t n, uint32_
 }
 
 static int bound_walk(const BoundCx *x, const Core *t, uint32_t depth);
+
+/* These domain helpers hide the arithmetic of decay. Their guest calls
+   must retain the input bounds used to justify that arithmetic. */
+static int bound_domain(const Machine *m, const Core *h) {
+  return domain_global(m, h, "wClamp") || domain_global(m, h, "decayTest") || domain_global(m, h, "decayAt") ||
+    domain_global(m, h, "cross") || domain_global(m, h, "settleFloor") || domain_global(m, h, "settleProof") ||
+    domain_global(m, h, "settlePair") || domain_global(m, h, "settleRest") || domain_global(m, h, "settle");
+}
 
 /* The spine T with the global head H and N arguments (N is 0 for a bare
    global). The head is not walked, only the arguments. */
@@ -4461,9 +4587,9 @@ static int bound_spine(const BoundCx *x, const Core *t, const Core *h, uint32_t 
     return 1;
   s.count = 0;
   s.result = 0;
-  if (d->origin == ORIGIN_PROGRAM)
+  if (d->origin == ORIGIN_PROGRAM || bound_domain(m, h))
     bound_sig(x, d->type, &s);
-  if ((n < s.count && bound_sig_base(&s)) || bound_args_above(x, t, n, depth, &s))
+  if ((n < s.count && bound_sig_base(&s)) || bound_args_above(x, t, h, n, depth, &s))
     return 1;
   for (j = 0; j < n; j++) {
     if (bound_walk(x, spine_arg(t, n, j), depth))
@@ -4474,9 +4600,9 @@ static int bound_spine(const BoundCx *x, const Core *t, const Core *h, uint32_t 
 
 /* Q-S5-1, Q-S5-6, Q-S5-7 (a): 1 if T has an add or a product above the
    word, a program def call with an Amount or Height argument above the
-   width of its parameter (including Window fields), or as a value a
+   width of its parameter (including record and Window fields), or as a value a
    growing word (amAdd, htAdd, amScale, htScale, wLen) or a program def
-   with an Amount, Height or Window parameter. */
+   with an Amount, Height, Window or bounded record parameter. */
 static int bound_walk(const BoundCx *x, const Core *t, uint32_t depth) {
   uint32_t i;
   uint32_t n;
@@ -4541,9 +4667,9 @@ static int bound_def(Checker *c, DefInfo *info, const char *name, const Value *t
   for (t = body; t != NULL && t->kind == CORE_LAM && x.params < x.sig.count; t = t->b)
     x.params++;
   if (bound_walk(&x, body, 0u))
-    return FAIL(c, "REFUSE_BOUND", "%s has an Amount or Height add, product or wLen above the 128-bit word, an argument above the width of its parameter (including Window fields), or as a value a growing word (amAdd, htAdd, amScale, htScale, wLen) or a program def with an Amount, Height or Window parameter; Q-S5-1 (a), Q-S5-6 (a), Q-S5-7 (a)", name);
+    return FAIL(c, "REFUSE_BOUND", "%s has an Amount or Height add, product or wLen above the 128-bit word, an argument above the width of its parameter (including record and Window fields), or as a value a growing word (amAdd, htAdd, amScale, htScale, wLen) or a program def with an Amount, Height, Window or bounded record parameter; Q-S5-1 (a), Q-S5-6 (a), Q-S5-7 (a)", name);
   b = bound_term(&x, body, 0u);
-  info->bound_kind = x.sig.result == 3 ? 0 : x.sig.result;
+  info->bound_kind = x.sig.result == 1 || x.sig.result == 2 ? x.sig.result : 0;
   info->bound_hi = b.over ? UINT64_MAX : b.hi;
   info->bound_lo = b.over ? UINT64_MAX : b.lo;
   return 1;

@@ -1,0 +1,4 @@
+-- A record's Window start must retain the Window input width at a call.
+def readEnd : Intent -> Height := fun (i : Intent) => htAdd (wStart (itWindow i)) (wLen (itWindow i))
+def wideWindow : Intent -> Height :=
+  fun (i : Intent) => readEnd (intent (itInTok i) (itOutTok i) (itAmtIn i) (itMinOut i) (itDecoy i) (itStartOut i) (window (htAdd (itDeadline i) (itDeadline i)) htZero) (itDeadline i) (itNf i) (itOwner i) (itSig i))

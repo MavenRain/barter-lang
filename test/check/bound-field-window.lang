@@ -1,0 +1,5 @@
+-- A Window field of a record that is not a parameter has the word bound
+-- (Q-S6-2 (a)), so its length is above the word.
+def fieldLen : Sum Intent Intent -> Height :=
+  fun (e : Sum Intent Intent) => elim (fun (s : Sum Intent Intent) => Height)
+    (fun (j : Intent) => wLen (itWindow j)) (fun (j : Intent) => htZero) e

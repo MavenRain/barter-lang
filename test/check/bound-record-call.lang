@@ -1,0 +1,7 @@
+-- A computed record has no field-bound summary. Three scales of a
+-- 64-bit amount by a 32-bit height can exceed the 128-bit word.
+def amountOf : Transfer -> Amount := fun (t : Transfer) => trAmt t
+def inflate : Height -> Transfer -> Transfer :=
+  fun (h : Height) (t : Transfer) => transfer (trTok t) (amScale h (trAmt t)) (trFrom t) (trTo t)
+def wideCall : Height -> Transfer -> Amount :=
+  fun (h : Height) (t : Transfer) => amScale h (amountOf (inflate h (inflate h t)))

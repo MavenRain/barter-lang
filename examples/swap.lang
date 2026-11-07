@@ -1,0 +1,29 @@
+-- The swap records of design sec 4 (S6). A program reads the public
+-- fields of an Intent parameter: an Amount or Height field has its width
+-- (Q-S6-1 (a)) and a Window field has the Window widths (Q-S6-2 (a)).
+-- The window length is at most 2^32 and startOut at most 2^64 - 1, so the
+-- product is below 2^96.
+def startScaled : Intent -> Amount :=
+  fun (i : Intent) => amScale (wLen (itWindow i)) (itStartOut i)
+def windowEnd : Window -> Height :=
+  fun (w : Window) => htAdd (wStart w) (wLen w)
+-- A Window field of a parameter is a Window argument at the Window widths.
+def intentEnd : Intent -> Height :=
+  fun (i : Intent) => windowEnd (itWindow i)
+def lateEnd : Intent -> Height :=
+  fun (i : Intent) => htAdd (windowEnd (itWindow i)) (itDeadline i)
+-- vdCheck keeps the verdict on yes and rejects on no.
+def notYes : Sum Unit Unit := sNot (inr unit)
+def vdKeep : Verdict Amount := vdCheck Amount (inr unit) badPair (accept Amount amZero)
+def vdStop : Verdict Amount := vdCheck Amount (inl unit) badPair (accept Amount amZero)
+-- A bounded record parameter can be forwarded or reconstructed at its widths.
+def twiceScaled : Intent -> Amount :=
+  fun (i : Intent) => amAdd (startScaled i) (startScaled i)
+def transferAmount : Transfer -> Amount := fun (t : Transfer) => trAmt t
+def copiedAmount : Transfer -> Amount :=
+  fun (t : Transfer) => transferAmount (transfer (trTok t) (trAmt t) (trFrom t) (trTo t))
+-- External records and sealed payloads retain their widths through these calls.
+def inputCross : Intent -> Quote -> Height -> Sealed (Sum Unit Unit) :=
+  fun (i : Intent) (q : Quote) (h : Height) => cross i q h
+def inputSettle : Spent -> Intent -> Quote -> Height -> Verdict Outcome :=
+  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) => settle l i q h
