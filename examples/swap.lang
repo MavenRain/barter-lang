@@ -25,5 +25,17 @@ def copiedAmount : Transfer -> Amount :=
 -- External records and sealed payloads retain their widths through these calls.
 def inputCross : Intent -> Quote -> Height -> Sealed (Sum Unit Unit) :=
   fun (i : Intent) (q : Quote) (h : Height) => cross i q h
-def inputSettle : Spent -> Intent -> Quote -> Height -> Verdict Outcome :=
-  fun (l : Spent) (i : Intent) (q : Quote) (h : Height) => settle l i q h
+def inputSettle : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) => settle p b i q c h
+-- Replay accepts inputs and entries whose payloads retain their widths.
+def inputFill : GovState -> Intent -> Quote -> Certificate -> Height -> Verdict GovState :=
+  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) (h : Height) => gsFill s i q c h
+def inputEntry : Intent -> Quote -> Certificate -> Height -> Entry :=
+  fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => enFill i q c h
+def inputStep : GovState -> Entry -> Verdict GovState :=
+  fun (s : GovState) (e : Entry) => govStep s e
+def inputReplay : Params -> Log -> Verdict GovState :=
+  fun (p : Params) (l : Log) => govReplay p l
+def inputLog : Params -> Intent -> Quote -> Certificate -> Height -> Verdict GovState :=
+  fun (p : Params) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
+    govReplay p (lgCons (enFill i q c h) lgNil)

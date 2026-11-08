@@ -1,0 +1,3 @@
+-- An entry height must retain its 32-bit input width.
+def wideHeight : Intent -> Quote -> Certificate -> Height -> Entry :=
+  fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => enFill i q c (htScale h h)

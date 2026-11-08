@@ -1,0 +1,2 @@
+-- A higher-order use must not bypass gsFill's input-width checks.
+def fillWord : GovState -> Intent -> Quote -> Certificate -> Height -> Verdict GovState := gsFill

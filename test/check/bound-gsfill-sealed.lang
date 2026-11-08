@@ -1,0 +1,4 @@
+-- gsFill must retain the sealed quote width required by settle.
+def wideFill : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Amount -> Verdict GovState :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (a : Amount) =>
+    gsFill (govState p p htZero b) i (quote (seal Amount (amScale h a)) (qtSolver q)) c h

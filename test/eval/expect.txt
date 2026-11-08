@@ -114,3 +114,33 @@ spend hasB => inl unit
 spend reusedRow => reject Outcome reused
 spend freshRow => accept Outcome (settled (transfer (token 1) (amSucc (amSucc (amSucc amZero))) (key 7) (key 9)) (transfer (token 2) (amSucc (amSucc (amSucc amZero))) (key 9) (key 7)))
 spend lowRow => reject Outcome belowFloor
+params floorFlag => inr unit
+params rangeFlag => inr unit
+params wideFlag => inl unit
+params certFlag => inr unit
+params dupFlag => inl unit
+params otherFlag => inl unit
+params openRow => accept Amount (amSucc (amSucc (amSucc (amSucc (amSucc amZero)))))
+params openDup => reject Amount badCert
+params canFlag => inr unit
+params overFlag => inl unit
+params restFlag => inl unit
+params tokFlag => inl unit
+params spentFlag => inr unit
+params freshFlag => inl unit
+params fundsRow => reject Amount noFunds
+spend badCertRow => reject Outcome badCert
+spend poorRow => accept Outcome unfilled
+spend pairRow => reject Outcome badPair
+params amendRow => accept Params (params (mbCons (key 1) (mbCons (key 2) (mbCons (key 3) mbNil))) (htSucc (htSucc (htSucc htZero))) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices (amSucc amZero) (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))) (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))))))))))))))))))) (fun _ => inr unit) (fun _ => inr unit))
+params amendLowRow => reject Params belowTMin
+params amendWideRow => reject Params badPrice
+params amendDupRow => reject Params badCert
+params replayRow => accept GovState (govState (params (mbCons (key 1) (mbCons (key 2) (mbCons (key 3) mbNil))) (htSucc (htSucc htZero)) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices (amSucc amZero) (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))) (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))))))))))))))))))) (fun _ => inr unit) (fun _ => inr unit)) (params (mbCons (key 1) (mbCons (key 2) (mbCons (key 3) mbNil))) (htSucc (htSucc (htSucc htZero))) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices (amSucc amZero) (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))) (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))))))))))))))))))) (fun _ => inr unit) (fun _ => inr unit)) (htSucc (htSucc (htSucc htZero))) (book (acCons (acct (key 1) (token 1) amZero (amSucc (amSucc (amSucc amZero)))) (acCons (acct (key 1) (token 1) (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))) amZero) acNil)) spNil))
+params replayLate => reject GovState badCert
+params replaySame => accept GovState (govState (params (mbCons (key 1) (mbCons (key 2) (mbCons (key 3) mbNil))) (htSucc (htSucc htZero)) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices (amSucc amZero) (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))) (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))))))))))))))))))) (fun _ => inr unit) (fun _ => inr unit)) (params (mbCons (key 1) (mbCons (key 2) (mbCons (key 3) mbNil))) (htSucc (htSucc (htSucc htZero))) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices (amSucc amZero) (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))) (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))))))))))))))))))) (fun _ => inr unit) (fun _ => inr unit)) (htSucc (htSucc (htSucc htZero))) (book (acCons (acct (key 1) (token 1) amZero (amSucc (amSucc (amSucc amZero)))) (acCons (acct (key 1) (token 1) (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))) amZero) acNil)) spNil))
+params replayPoor => reject GovState noFunds
+params foldRow => accept Params (params (mbCons (key 1) (mbCons (key 2) (mbCons (key 3) mbNil))) (htSucc (htSucc (htSucc htZero))) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices (amSucc amZero) (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))) (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))))))))))))))))))) (fun _ => inr unit) (fun _ => inr unit))
+spend stepFresh => accept GovState (govState (params (mbCons (key 3) (mbCons (key 4) mbNil)) (htSucc (htSucc htZero)) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices (amSucc amZero) (amSucc amZero) (amSucc amZero)) (fun _ => inr unit) (fun _ => inr unit)) (params (mbCons (key 3) (mbCons (key 4) mbNil)) (htSucc (htSucc htZero)) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices (amSucc amZero) (amSucc amZero) (amSucc amZero)) (fun _ => inr unit) (fun _ => inr unit)) htZero (book (acCons (acct (key 7) (token 2) (amSucc (amSucc (amSucc amZero))) amZero) (acCons (acct (key 9) (token 2) amZero (amSucc (amSucc (amSucc amZero)))) (acCons (acct (key 9) (token 1) (amSucc (amSucc (amSucc amZero))) amZero) (acCons (acct (key 7) (token 1) amZero (amSucc (amSucc (amSucc amZero)))) (acCons (acct (key 7) (token 1) (amSucc (amSucc (amSucc amZero))) amZero) (acCons (acct (key 9) (token 2) (amSucc (amSucc (amSucc amZero))) amZero) acNil)))))) (spCons (nullifier 1) spNil)))
+spend stepReused => reject GovState reused
+spend spentAfter => accept (Sum Unit Unit) (inr unit)

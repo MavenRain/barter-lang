@@ -1,0 +1,4 @@
+-- The replay fold cannot receive a log with a widened fill quote.
+def wideFold : GovState -> Intent -> Quote -> Certificate -> Height -> Amount -> Verdict GovState :=
+  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (a : Amount) =>
+    rpGo (lgCons (enFill i (quote (seal Amount (amScale h a)) (qtSolver q)) c h) lgNil) s

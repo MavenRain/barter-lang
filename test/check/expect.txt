@@ -187,3 +187,12 @@ bound-cross-sealed.lang REFUSE_BOUND
 bound-settle-sealed.lang REFUSE_BOUND
 bound-sealed-arg.lang REFUSE_BOUND
 bound-decay-value.lang REFUSE_BOUND
+floor-params.lang REFUSE_FLOOR
+floor-range.lang REFUSE_FLOOR
+bound-gsfill-sealed.lang REFUSE_BOUND
+bound-govstep-sealed.lang REFUSE_BOUND
+bound-govreplay-sealed.lang REFUSE_BOUND
+bound-rpgo-sealed.lang REFUSE_BOUND
+bound-gsfill-value.lang REFUSE_BOUND
+bound-entry-intent.lang REFUSE_BOUND
+bound-entry-height.lang REFUSE_BOUND

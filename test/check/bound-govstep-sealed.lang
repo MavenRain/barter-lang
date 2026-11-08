@@ -1,0 +1,4 @@
+-- Packing the quote into an Entry must not hide its payload width.
+def wideStep : GovState -> Intent -> Quote -> Certificate -> Height -> Amount -> Verdict GovState :=
+  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (a : Amount) =>
+    govStep s (enFill i (quote (seal Amount (amScale h a)) (qtSolver q)) c h)

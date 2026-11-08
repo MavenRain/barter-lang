@@ -1,0 +1,73 @@
+-- The genesis Params of barter-lang (S7, Q-S7-1 (a)): three members, the
+-- threshold 2, the amend quorum 2, one token pair and the price tiers 1, 5
+-- and 20 in cents. The proof fields are refl: the kernel computes
+-- htLe tMin 2 and pcIn of the tiers. This file is in kit mode (the keys,
+-- the tokens and the seal).
+def tierLow : Amount := amSucc amZero
+def tierBuild : Amount := amSucc (amSucc (amSucc (amSucc (amSucc amZero))))
+def tierExport : Amount := pcMax
+def genesisMembers : Members := mbCons (key 1) (mbCons (key 2) (mbCons (key 3) mbNil))
+def genesisParams : Params := params genesisMembers (htSucc (htSucc htZero)) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices tierLow tierBuild tierExport) refl refl
+-- The proof fields and the tiers.
+def floorFlag : Sum Unit Unit := htLe tMin (prT genesisParams)
+def floorRow : Path (Sum Unit Unit) (htLe tMin (prT genesisParams)) (inr unit) := prFloor genesisParams
+def rangeFlag : Sum Unit Unit := pcIn (prPrices genesisParams)
+def tierRow : Path Amount (pcExport (prPrices genesisParams)) (amAdd tierBuild (amAdd tierBuild (amAdd tierBuild tierBuild))) := refl
+def wideFlag : Sum Unit Unit := pcIn (prices tierLow tierBuild (amSucc pcMax))
+-- A certificate on an amendment statement: two distinct members sign it.
+-- A certificate with one member twice has one distinct member, below the
+-- threshold 2.
+def amendStmt : Statement := smAmend (root 9) (htSucc (htSucc (htSucc htZero)))
+def certTwo : Certificate := certificate amendStmt (csCons (key 1) (sig 1) (csCons (key 2) (sig 2) csNil))
+def certDup : Certificate := certificate amendStmt (csCons (key 1) (sig 1) (csCons (key 1) (sig 1) csNil))
+def certFlag : Sum Unit Unit := ctCheck genesisMembers (prT genesisParams) amendStmt certTwo
+def dupFlag : Sum Unit Unit := ctCheck genesisMembers (prT genesisParams) amendStmt certDup
+def certRow : Path (Sum Unit Unit) (ctCheck genesisMembers (prT genesisParams) amendStmt certTwo) (inr unit) := refl
+def dupRow : Path (Sum Unit Unit) (ctCheck genesisMembers (prT genesisParams) amendStmt certDup) (inl unit) := refl
+-- A certificate on another statement does not check.
+def otherFlag : Sum Unit Unit := ctCheck genesisMembers (prT genesisParams) (smFill (nullifier 4) htZero) certTwo
+-- The certified open: accept of the open value, or reject badCert.
+def openRow : Verdict Amount := certOpen Amount genesisParams certTwo amendStmt (seal Amount tierBuild)
+def openDup : Verdict Amount := certOpen Amount genesisParams certDup amendStmt (seal Amount tierBuild)
+-- The book: key 1 deposits 5 at token 1. It can pay 3, not 6. After a
+-- debit of 3, it cannot pay 3 again. It has no credit at token 2. A spent
+-- nullifier is in the book, another nullifier is not.
+def bookA : Book := bkCredit (key 1) (token 1) tierBuild (book acNil spNil)
+def bookB : Book := bkDebit (key 1) (token 1) (amSucc (amSucc (amSucc amZero))) bookA
+def canFlag : Sum Unit Unit := bkCan (key 1) (token 1) (amSucc (amSucc (amSucc amZero))) bookA
+def overFlag : Sum Unit Unit := bkCan (key 1) (token 1) (amSucc tierBuild) bookA
+def restFlag : Sum Unit Unit := bkCan (key 1) (token 1) (amSucc (amSucc (amSucc amZero))) bookB
+def tokFlag : Sum Unit Unit := bkCan (key 1) (token 2) (amSucc amZero) bookA
+def spentFlag : Sum Unit Unit := bkHas (nullifier 4) (bkSpend (nullifier 4) bookA)
+def freshFlag : Sum Unit Unit := bkHas (nullifier 5) (bkSpend (nullifier 4) bookA)
+def fundsRow : Verdict Amount := vdCheck Amount (bkCan (key 1) (token 1) (amSucc tierBuild) bookA) noFunds (accept Amount tierBuild)
+def canRow : Path (Sum Unit Unit) (bkCan (key 1) (token 1) (amSucc (amSucc (amSucc amZero))) bookA) (inr unit) := refl
+-- govAmend (design sec 5): the genesis committee signs an amendment with the
+-- threshold 3: accept. The threshold 1 is below tMin, a tier 21 is out of
+-- the range, and certDup has one distinct member, below the quorum 2.
+def amendA : Amendment := amendment genesisMembers (htSucc (htSucc (htSucc htZero))) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices tierLow tierBuild tierExport) (root 9)
+def amendLow : Amendment := amendment genesisMembers (htSucc htZero) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices tierLow tierBuild tierExport) (root 9)
+def amendWide : Amendment := amendment genesisMembers (htSucc (htSucc (htSucc htZero))) (htSucc (htSucc htZero)) (paCons (tradePair (token 1) (token 2)) paNil) (prices tierLow tierBuild (amSucc pcMax)) (root 9)
+def amendRow : Verdict Params := govAmend genesisParams amendA certTwo (htSucc (htSucc (htSucc htZero)))
+def amendLowRow : Verdict Params := govAmend genesisParams amendLow certTwo (htSucc (htSucc (htSucc htZero)))
+def amendWideRow : Verdict Params := govAmend genesisParams amendWide certTwo (htSucc (htSucc (htSucc htZero)))
+def amendDupRow : Verdict Params := govAmend genesisParams amendA certDup (htSucc (htSucc (htSucc htZero)))
+-- The replay (S7, Q-S7-6 (a)): a deposit of 5 at the height 0, a
+-- withdrawal of 3 at the height 1 (2 signatures, prT 2) and amendA at the
+-- height 3. replayLate has the withdrawal at the height 4, where the
+-- amended Params (prT 3) is in force: badCert. replaySame has it at the
+-- height 3, where the genesis Params is still in force (G2). replayPoor
+-- withdraws 6: noFunds. foldRow is amendFold on replayLog (G1).
+def three : Amount := amSucc (amSucc (amSucc amZero))
+def depEntry : Entry := enDeposit (key 1) (token 1) tierBuild htZero
+def amendEntry : Entry := enAmend amendA certTwo (htSucc (htSucc (htSucc htZero)))
+def wdOne : Entry := enWithdraw (key 1) (token 1) three (certificate (smWithdraw (key 1) (token 1) three (htSucc htZero)) (ctSigs certTwo)) (htSucc htZero)
+def wdThree : Entry := enWithdraw (key 1) (token 1) three (certificate (smWithdraw (key 1) (token 1) three (htSucc (htSucc (htSucc htZero)))) (ctSigs certTwo)) (htSucc (htSucc (htSucc htZero)))
+def wdFour : Entry := enWithdraw (key 1) (token 1) three (certificate (smWithdraw (key 1) (token 1) three (htSucc (htSucc (htSucc (htSucc htZero))))) (ctSigs certTwo)) (htSucc (htSucc (htSucc (htSucc htZero))))
+def wdSix : Entry := enWithdraw (key 1) (token 1) (amSucc tierBuild) (certificate (smWithdraw (key 1) (token 1) (amSucc tierBuild) (htSucc htZero)) (ctSigs certTwo)) (htSucc htZero)
+def replayLog : Log := lgCons depEntry (lgCons wdOne (lgCons amendEntry lgNil))
+def replayRow : Verdict GovState := govReplay genesisParams replayLog
+def replayLate : Verdict GovState := govReplay genesisParams (lgCons depEntry (lgCons amendEntry (lgCons wdFour lgNil)))
+def replaySame : Verdict GovState := govReplay genesisParams (lgCons depEntry (lgCons amendEntry (lgCons wdThree lgNil)))
+def replayPoor : Verdict GovState := govReplay genesisParams (lgCons depEntry (lgCons wdSix lgNil))
+def foldRow : Verdict Params := amendFold genesisParams replayLog

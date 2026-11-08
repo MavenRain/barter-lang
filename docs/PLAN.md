@@ -17,15 +17,17 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 to 1.8 list the questions for the USER,
+`design/DESIGN.md`. Sections 1.2 to 1.9 list the questions for the USER,
 and section 1.1 has the rulings.
 
-Status: S6 DONE (2026-11-07): the swap records and sums, `settle` with
-the decay test, and the laws S1, S2, S3, S5 and N1 are in the domain
-(sections 3 and 6), with two field rules in the checker (section 4).
-Q-S4-1..4, Q-S5-1..10 and Q-S6-1..6 are ruled (a). Section 1.8 has the
-S6 questions, all ruled. Next: S7 (governance: `Params`, `amend`,
-`replay`, laws G1 to G3).
+Status: S7 DONE (2026-11-07): governance is in the domain: `Params`
+with the price list, `govAmend`, the `Log`, the `Book`, the `settle` of
+S7 with the certificate and the funds check, `govReplay`, the laws G1,
+G2 and G3, and N1 in the replay form (sections 3 and 6), with the
+`REFUSE_FLOOR` check of the proof fields in the checker (section 7).
+Q-S4-1..4, Q-S5-1..10, Q-S6-1..6 and Q-S7-1..7 are ruled (a). Section
+1.9 has the S7 questions, all ruled. Next: S8 (refusal codes,
+`check --json`, `langc fmt`).
 
 ## 1. Rulings and questions
 
@@ -107,6 +109,17 @@ S6 questions, all ruled. Next: S7 (governance: `Params`, `amend`,
 | 2026-11-07 | Q-S6-4 (a) (Recommended): N1 is N1a (a spent nullifier gives `reject Outcome reused`, DISCHARGED) and closed `refl` rows and eval rows for the spend direction. The full replay form comes in S7. The ids stay `Nat`. | USER, S6 |
 | 2026-11-07 | Q-S6-5 (a) (Recommended): S2 is the path from the open of `cross` to `decayAt` of the open values (DISCHARGED by elim), and closed rows for the arithmetic reading. | USER, S6 |
 | 2026-11-07 | Q-S6-6 (a) (Recommended): the S6 `settle` uses stand-ins: `Spent` for the ledger, the plain `open` for the certified open, `sgVrf` for the proof check, and `badPair` for equal tokens until the S7 `Params`. | USER, S6 |
+| 2026-11-07 | Q-S7-1 (a) (Recommended): `Params` has the committee (`prMembers`), the threshold `prT`, the amend quorum `prQuorum`, the token pairs `prPairs`, the price list `prPrices` and two proof fields: `prFloor` (`tMin` <= `prT`, `tMin` = 2) and `prRange`. The price list has three tiers in cents: `pcLow` 1, `pcBuild` 5 and `pcExport` 20, each in the range 1 to 20. A closed `Params` with a proof field that the kernel cannot check gives `REFUSE_FLOOR`. `badPair` reads `prPairs`. | USER, S7 |
+| 2026-11-07 | Q-S7-2 (a) (Recommended): an `Amendment` holds the new values without proofs. `amend p a c h` is a chain of checks `badCert`, `belowTMin` and `badPrice`; when all pass, a dependent check word gives the proof fields of the new `Params`. | USER, S7 |
+| 2026-11-07 | Q-S7-3 (a) (Recommended): a `Statement` is `smFill` (a nullifier and a height) or `smAmend` (a `Root` digest and a height). A `Certificate` is a statement and a list of signatures (`Key`, `Sig`). `ctCheck` counts the distinct members (gavel-lang `checkCert`; `sgVrf` until S8b). `certOpen` gives `reject badCert` or `accept` of `open`. In `settle`, `badCert` comes before `belowFloor`. | USER, S7 |
+| 2026-11-07 | Q-S7-4 (a) (Recommended): a `Log` is a list of entries in height order: `enFill`, `enAmend`, `enDeposit` and `enWithdraw`. The ledger is `Book`: for each key and token, the total credit and the total debit, and the spent nullifiers. A debit x is valid when debit + x <= credit (`amLe`). This closes OI-8. | USER, S7 |
+| 2026-11-07 | Q-S7-5 (a) (Recommended): a fill with all checks at yes and a leg above the balance of its payer gives `accept Outcome unfilled`; the `Book` does not change and the nullifier is not spent. A withdraw above the balance gives `reject noFunds`, a tenth reason. | USER, S7 |
+| 2026-11-07 | Q-S7-6 (a) (Recommended): `replay p l` folds the log with the `Params` in force, the next `Params`, the height of the last amendment and the `Book`; the first rejected entry rejects the replay. G1: the replay of the amendment entries is the fold of `amend` (by induction on the log). G2: a fill at the height of an amendment settles with the old `Params`. G3: `prFloor` (by the type). | USER, S7 |
+| 2026-11-07 | Q-S7-7 (a) (Recommended): `n1Replay`: at each step of `replay`, a fill whose nullifier is in the spent set of the `Book` gives `reject reused` (one `cong`). The spend direction has closed `refl` rows. The ids stay `Nat`. | USER, S7 |
+| 2026-11-07 | The replay state record is `GovState` (constructor `govState`, fields `ssCur`, `ssNext`, `ssAt` and `ssBook`), because `State` is the guest program state (`REFUSE_STATE`). | USER, S7 session 3 |
+| 2026-11-07 | The domain amendment operation is `govAmend`, because `amend` is a guest name in `examples/oneuse.lang`, `examples/regimes.lang` and 10 `test/check` files (rule R4, `REFUSE_NAME`). | USER, S7 session 4 |
+| 2026-11-07 | A withdrawal certificate signs a third `Statement` form, `smWithdraw (smWdKey : Key) (smWdTok : Token) (smWdAmt : Amount) (smWdAt : Height)`, checked at `prT` (as a fill). The order in `gsWithdraw` is `badCert`, then `noFunds`. | USER, S7 session 5 |
+| 2026-11-07 | The domain step and replay words are `govStep` and `govReplay` (rule R4: `step` is a state field in `test/check/state-fun-field.lang`, and `test/pathtool.c` makes a guest `def replay`). `amendFold` keeps its name. | USER, S7 session 5 |
 
 The seed is `bin/new-lang.sh barter-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -472,6 +485,97 @@ open, `sgVrf` for the proof check and `badPair` for equal tokens until
 the S7 `Params`; S7 and S8b replace each (Recommended). (b) `settle`
 waits for S7. RULED (a).
 
+### 1.9 Questions for the USER (S7)
+
+S7 is governance (section 12): `Params`, `amend`, `replay`, the laws
+G1 to G3, and the S6 stand-ins that S7 replaces (Q-S6-6 (a)).
+
+Q-S7-1 The shape of `Params`. (a) A record with the committee
+(`prMembers`, a list of `Key`), the threshold `prT : Height`, the amend
+rule (`prQuorum : Height`, the count of signatures for an amendment),
+the token pairs `prPairs` and the price list `prPrices`, with two proof
+fields: `prFloor` (t_min <= `prT`) and `prRange` (each price in its
+range). `tMin` is a domain constant, 2. The price list has three tiers
+in cents (`Amount`): `pcLow` (check, fmt, explain, list-base and
+show-law; genesis 1), `pcBuild` (genesis 5) and `pcExport` (genesis
+20). Each price is in the range 1 to 20. A closed `Params` with a proof
+field that the kernel cannot check gives `REFUSE_FLOOR` (section 7).
+`badPair` reads `prPairs`. The decay window bounds and the deadlines
+stay in the intent (an open item). (Recommended) (b) The same, with one
+price for each route of `langc serve` (eight prices). (c) The same, with
+the prices in units of 10^-6 USDC (10000 to 200000); eval of these
+unary values is slow. RULED (a).
+
+Q-S7-2 `amend`. (a) An `Amendment` holds the new values without
+proofs: the members, t, the quorum, the pairs and the prices.
+`amend p a c h` is a chain of checks: `badCert` (c is not a certificate
+of the amendment statement at h by `prQuorum p` members of `p`),
+`belowTMin` (t below `tMin`) and `badPrice` (a price outside its
+range). When all checks pass, `amend` gives `accept` with the new
+`Params`; a dependent check word gives the proof fields from the passed
+checks. (Recommended) (b) An `Amendment` holds a full `Params` (the
+gavel-lang shape). `amend` checks only the certificate; `belowTMin` and
+`badPrice` come from the host decode of an amendment message. RULED (a).
+
+Q-S7-3 `Statement`, `Certificate` and the certified open. (a) A
+`Statement` is `smFill` (a nullifier and a height: open the two legs of
+that intent at that height) or `smAmend` (a `Root` digest of the
+amendment and a height). A `Certificate` is a statement and a list of
+signatures (`Key`, `Sig`). `ctCheck m k s c` says yes when c is on the
+statement s and has the signatures of at least k distinct members of m
+(the gavel-lang `checkCert` on the S5 base; `sgVrf` stays the stand-in
+until S8b). The certified open `certOpen p c x` gives `reject badCert`
+when the check fails, else `accept` of `open x`. In `settle`, the
+`badCert` check comes before `belowFloor`. (Recommended) (b) A
+`Certificate` is an opaque id with a stand-in check, as `sgVrf`; S8b
+builds the list. RULED (a).
+
+Q-S7-4 The `Log`, the ledger and OI-8. (a) A `Log` is a list of entries
+in height order: `enFill` (an intent, a quote, a certificate, a
+height), `enAmend` (an amendment, a certificate, a height),
+`enDeposit` (a key, a token, an amount, a height: the escrow on chain
+credits the key) and `enWithdraw` (a key, a token, an amount, a
+certificate, a height). The ledger is `Book` (the name `Ledger` is a
+guest def in `examples/oneuse.lang`): for each key and token, the total
+credit and the total debit, and the spent nullifiers. A debit of x is
+valid when debit + x <= credit (`amLe`), with no subtraction (section
+2). This closes OI-8. (Recommended) (b) The same, with a balance for
+each key and token and a total subtraction word that gives a
+`Verdict Amount`. RULED (a).
+
+Q-S7-5 The meaning of `unfilled`, and a debit above the balance. (a)
+`unfilled` is the outcome of a fill with all checks at yes and a leg
+above the balance of its payer: `settle` gives `accept Outcome
+unfilled`, the `Book` does not change, and the nullifier is not spent
+(a new quote can fill the intent). A withdraw above the balance gives
+`reject` with a tenth reason `noFunds` (section 2 gets ten reasons).
+(Recommended) (b) A leg or a withdraw above the balance gives
+`reject noFunds`; `unfilled` is an intent past its deadline with no
+fill, which `replay` reports. (c) Nine reasons stay: a fill above the
+balance is `unfilled`, and a withdraw above the balance has no effect. RULED (a).
+
+Q-S7-6 `replay` and the statements of G1 to G3. (a) `replay p l` folds
+the log from height 0 with a state: the `Params` in force, the next
+`Params`, the height of the last amendment and the `Book`. An entry at
+a height above that height first puts the next `Params` in force. Each
+entry is checked with the `Params` in force at its height. The first
+rejected entry rejects the whole replay with its reason (a certified
+log holds only valid entries). G1: the replay of the amendment entries
+of a log gives the same `Params` as the fold of `amend` over the log
+(by induction on the log). G2: a fill at the height of an amendment
+settles with the old `Params` (by the height order). G3: each `Params`
+has t >= t_min (`prFloor`, by the type). (Recommended) (b) The same,
+but a rejected entry has no effect and `replay` goes on. RULED (a).
+
+Q-S7-7 N1 in the replay form. (a) Two parts. `n1Replay`: at each step
+of `replay`, a fill whose nullifier is in the spent set of the `Book`
+gives `reject reused` (one `cong`, as N1a). The spend direction (after
+a settled fill, the nullifier is in the spent set) has closed `refl`
+rows, because `nfEq n n` does not reduce for a variable `n` (Q-S6-4).
+The ids stay `Nat`. (Recommended) (b) `Nullifier` gets a unary id with
+an equality that reduces by induction, so the spend direction is a
+general law. RULED (a).
+
 ## 2. The reading of R0: no runtime error
 
 R0 says that langc accepts no program that can lead to a runtime error.
@@ -480,12 +584,15 @@ total, and every failure in the domain is a value.
 
 - A failed proof check, a bad decryption share, an expired intent, a reused
   nullifier, a wrong token pair, a quote below the floor, a bad certificate,
-  an amendment below t_min and an amendment with a price outside its range
-  are each a `reject Reason` of `Verdict`, or `Unfilled` of `Outcome`. None
-  is a trap.
-- Reasons (Q-S0-1 (a), Q-S1-6 (a)), nine: `bad_proof`, `bad_share`,
-  `expired`, `reused`, `bad_pair`, `below_floor`, `bad_cert`,
-  `below_t_min`, `bad_price`.
+  an amendment below t_min, an amendment with a price outside its range
+  and a withdrawal above the balance are each a `reject Reason` of
+  `Verdict`. A fill with a leg above the balance of its payer is
+  `accept Outcome unfilled` (Q-S7-5 (a)). None is a trap.
+- Reasons (Q-S0-1 (a), Q-S1-6 (a), Q-S7-5 (a)), ten: `bad_proof`,
+  `bad_share`, `expired`, `reused`, `bad_pair`, `below_floor`,
+  `bad_cert`, `below_t_min`, `bad_price`, `no_funds`. The domain names
+  are `badProof`, `badShare`, `expired`, `reused`, `badPair`,
+  `belowFloor`, `badCert`, `belowTMin`, `badPrice` and `noFunds`.
 - The crypto is in the module (Q-S0-17 (b)): guest terms over the total
   `Word` type of section 4. A proof, a share, a signature or an MPC output
   that does not check is a `reject`, never a trap.
@@ -562,6 +669,92 @@ to 5), `settlePair` (checks 3 to 5), `settleProof` (checks 4 and 5) and
 `settleFloor` (check 5). When all checks pass, the verdict is
 `accept Outcome (settleOut i q)`. In S6, `settle` opens with the plain
 `open`; S7 puts a certificate before the open (Q-S6-6 (a)).
+
+S7 (2026-11-07) builds the governance of design sec 5 at the end of
+`domain/domain.lang`, after `bkHas`: a domain word goes after each type
+and word that it names. The records and sums:
+
+- `Params` is `params` of `prMembers` (a `Members` list of `Key`),
+  `prT` (the threshold), `prQuorum` (the count of signatures for an
+  amendment), `prPairs` (a `Pairs` list of `Pair`), `prPrices` and the
+  two proof fields `prFloor` (`htLe tMin (prT p)` is yes; `tMin` is 2)
+  and `prRange` (`pcIn (prPrices p)` is yes). `Prices` is `prices` of
+  the three tiers `pcLow`, `pcBuild` and `pcExport` in cents; `pcTier`
+  says yes for 1 to `pcMax` (20). The `Pair` constructor is
+  `tradePair`, because `pair` is a kit word.
+- `Statement` is `smFill` (a nullifier and a height), `smAmend` (a
+  `Root` digest and a height) or `smWithdraw` (a key, a token, an
+  amount and a height; USER, S7 session 5). `Certificate` is
+  `certificate` of a statement and `Sigs` (a list of `Key` and `Sig`).
+  `ctCheck m k s c` says yes when the statement of `c` is `s` (`smEq`)
+  and `ctCount` finds at least `k` distinct members of `m` with a
+  signature (`sgVrf` stays the S8b stand-in). `certOpen` gives
+  `reject badCert` or `accept` of `open`.
+- `Amendment` holds the new members, t, quorum, pairs and prices
+  without proofs, and the `Root` digest `adRoot`.
+- `Entry` is `enFill` (an intent, a quote, a certificate and a height),
+  `enAmend` (an amendment, a certificate and a height), `enDeposit` (a
+  key, a token, an amount and a height) or `enWithdraw` (a key, a
+  token, an amount, a certificate and a height). `Log` is a list of
+  entries.
+- `Book` is `book` of `Accts` (a journal of `acct k t credit debit`
+  rows) and `Spent` (the spent nullifiers). `bkCredit` and `bkDebit`
+  add a row, and `acIn` and `acOut` add the credits and the debits of
+  one key and one token. `bkCan k t x b` says yes when `acOut` + x <=
+  `acIn`, with no subtraction (Q-S7-4 (a)). `bkSpend` and `bkHas` add
+  and find a nullifier.
+- `GovState` is `govState` of `ssCur` (the `Params` in force), `ssNext`
+  (the next `Params`), `ssAt` (the height of the last amendment) and
+  `ssBook` (USER, S7 session 3).
+- `Reason` gets a tenth reason, `noFunds` (Q-S7-5 (a)).
+
+The compare words of S7 use `amLeLin`, a case on `amCase` (about x * y
+eval steps). The eval of `amLe` computes each recursive value first, so
+its nested elim costs about C(x + y, x) steps (`amLe 20 20` is above
+the arena limit). `amLe` stays for its laws.
+
+`govAmend p a c h` (Q-S7-2 (a)) is a chain of three checks: `badCert`
+(`ctCheck` at `prQuorum p` on `smAmend (adRoot a) h`), `belowTMin` and
+`badPrice`. When all pass, it gives `accept` of the new `Params`, and
+`vdWith` gives the two proof fields from the paths of the passed
+checks.
+
+`settle p b i q c h` is a chain of six checks, with the first check
+outermost: `reused` (`bkHas` on the `Book`), `expired`, `badPair`
+(`paOk`: the token pair of the intent is in `prPairs p`), `badProof`
+(`sgVrf`), `badCert` (`ctCheck` at `prT p` on `smFill (itNf i) h`) and
+`belowFloor` (the open of `cross`). The tails are `settleRest`,
+`settlePair`, `settleProof`, `settleCert` and `settleFloor`. When all
+checks pass, `settleFunds b i q` gives `settleOut i q` when each leg is
+in the balance of its payer (`fdFlag`, two `bkCan`), else `unfilled`
+(Q-S7-5 (a)). The guest-call bound check of the checker names the new
+tails `settleCert` and `settleFunds` (`bound_domain`).
+
+The S7 staged review also guards `gsFill`, including its use as a
+function value. An `Entry` constructor checks its base fields and the
+bounded fields of its nested records before a fill can enter a `Log`.
+Thus `govStep`, `rpGo` and `govReplay` cannot hide a widened sealed quote
+or intent payload from settlement. Seven refusal fixtures cover these
+paths, the fill helper as a value and an entry height above its width;
+all seven were accepted by the original staged checker. The forwarding
+and construction examples in `examples/swap.lang` retain valid input
+widths.
+
+The replay (Q-S7-6 (a)): `vdThen` binds a `Verdict`. `gsCur s h` is
+`ssCur s` when h <= `ssAt s`, else `ssNext s`. `govStep s e` checks the
+entry `e` with the `Params` in force at its height: `gsFill` (the
+`settle` of S7; on `settled` the `Book` pays the two legs and spends
+the nullifier, on `unfilled` the `Book` does not change), `gsAmend`
+(`govAmend`; the result is the next `Params`, in force above the height
+of the entry), `gsDeposit` (a credit) and `gsWithdraw` (`badCert` on
+`smWithdraw` at `prT`, then `noFunds`, then a debit). `rpGo` folds a
+log with `govStep` and `vdThen`: the first `reject` rejects the replay.
+`govReplay p l` starts at `govState p p htZero bkZero`. `lgAmends`
+keeps the amendment entries of a log, and `amendFold p l` folds the
+amendment step (`afStep`, `afGo`) over the log and gives the next
+`Params` of the last state. The names are `govAmend`, `govStep` and
+`govReplay`, not `amend`, `step` and `replay`, because those are guest
+names in `examples/` and `test/` (rule R4; USER, S7 sessions 4 and 5).
 
 ## 4. The minimal base signature (R2)
 
@@ -715,7 +908,7 @@ one check at a time.
 | S3 | `s3Quote` | Two quotes from one solver with equal open outputs give the same `settle`. | Elim on the two sealed outputs, with a motive that is a function of the path, then `cong`. |
 | S5 | `s5Fill` | `fillOutcome f` is `settled` of the two legs of the fill `f`. | `refl`. |
 
-N1 in the replay form comes with S7 (Q-S6-4 (a)). The arithmetic reading
+N1 in the replay form is DONE at S7 (Q-S6-4 (a)). The arithmetic reading
 of S2 (the floor is `startOut` before the start of the window and
 `minOut` after the end) has closed rows. The rows:
 
@@ -730,6 +923,51 @@ of S2 (the floor is `startOut` before the start of the window and
   `nullifier 2`), an intent and two quotes at the height 2 (floor 3).
   The `spHas` rows and the `settle` rows (`reused`, accept with the two
   transfers, `belowFloor`), each with a `refl` law; 5 eval rows.
+
+S7 (2026-11-07) discharges G1, G2, G3 and N1 in the replay form, and
+states S1, N1a and S3 again on the `settle` of S7 (the S6 forms of
+these laws are gone). The S1 proofs use `vdOk` and `vdBad` as in S6.
+The kernel takes `cong (fun (f : Sum Unit Unit) => accept Outcome
+(fdPick f i q)) p` as the path from `accept Outcome (settleFunds b i
+q)` to the outcome of the funds flag.
+
+| Law | Defs | Statement | Proof |
+|---|---|---|---|
+| S1 | `s1Accept` | The six flags and the funds flag at yes give `settle p b i q c h` = `accept Outcome (settleOut i q)`. | A `trans` chain of six `vdOk`, then a `cong` on the funds flag. |
+| S1 | `s1Unfilled` | The six flags at yes and the funds flag at no give `accept Outcome unfilled` (Q-S7-5 (a)). | The same chain, then a `cong` on the funds flag. |
+| S1 | `s1Expired`, `s1BadPair`, `s1BadProof`, `s1BadCert`, `s1BelowFloor` | The flags before a check at yes and the flag of the check at no give `reject Outcome` with the reason of the check. | A `vdOk` prefix, then `vdBad`. |
+| N1 | `n1Reused` | `bkHas (itNf i) b` at yes gives `reject Outcome reused` (N1a). | One `cong`. |
+| S3 | `s3Quote` | Two quotes from one solver with equal open outputs give the same `settle` (the S7 signature). | As in S6. |
+| G1 | `g1Go`, `g1Fix` | `g1Go l s`: `rpGo (lgAmends l) s` = `afGo l s`. `g1Fix p l`: `vdThen GovState Params (govReplay p (lgAmends l)) (fun s => accept Params (ssNext s))` = `amendFold p l`. | `g1Go` by induction on the log; on an amendment entry, an elim on the verdict of `gsAmend`. `g1Fix` is one `cong` of `g1Go` at `govState p p htZero bkZero`. |
+| G2 | `g2Cur`, `g2Same` | `g2Cur s`: `gsCur s (ssAt s)` = `ssCur s`. `g2Same s i q c`: `govStep s (enFill i q c (ssAt s))` is the fill with `ssCur s`, the `Params` before the amendment at that height. | `g2Cur` is a `cong` on the flag with `htLeRefl`; `g2Same` uses `g2Cur`. |
+| G3 | `g3Floor` | Each `Params` p has `htLe tMin (prT p)` at yes. | `prFloor p` (by the type). |
+| N1 | `n1Replay` | At a step of the replay, a fill whose nullifier is in the spent set of the `Book` gives `govStep s (enFill i q c h)` = `reject GovState reused` (Q-S7-7 (a)). | One `cong` on `n1Reused`. |
+
+Four mutants, one wrong law body at a time, are each refused by the
+kernel (`TYPE_MISMATCH` in `langc --kit check` of
+`examples/spend.lang`): `g3Floor` with `prRange`, `g2Cur` with the two
+branches swapped, `g1Go` with `accept ih s`, and `n1Replay` with
+`ssCur`. The spend direction of N1 (after a settled fill, the nullifier
+is in the spent set) has closed `refl` rows, because `nfEq n n` does
+not reduce for a variable `n` (Q-S7-7 (a)). The rows:
+
+- `examples/params.lang` (kit mode, new): `genesisParams` (the members
+  `key 1` to `key 3`, t 2 and the prices 1, 5 and 20); the closed laws
+  `floorRow`, `tierRow`, `certRow`, `dupRow` and `canRow`; 24 eval rows
+  for the price and floor flags, `ctCheck` and `certOpen`, the `Book`
+  (`bkCan`, `bkHas` and `noFunds`), `govAmend` (accept, `belowTMin`,
+  `badPrice` and `badCert`), `govReplay` (`replayRow`, `replayLate`,
+  `replaySame` and `replayPoor`) and `foldRow` (`amendFold`, equal to
+  `amendRow`).
+- `examples/spend.lang` (kit mode): the `settle` rows on the S7
+  signature (the outputs of `reusedRow`, `freshRow` and `lowRow` do not
+  change), `badCertRow`, `poorRow` (`unfilled`) and `pairRow`; the
+  replay rows `stepFresh`, `stepReused`, `stepReusedRefl`,
+  `stepReusedN1` (`n1Replay` on literals), `spentAfter` and
+  `spentAfterRefl` (the spend direction); 6 eval rows.
+- `examples/swap.lang` (`inputSettle`) and
+  `test/check/bound-settle-sealed.lang` take the S7 signature of
+  `settle`.
 
 ## 7. Refusals
 
@@ -758,6 +996,13 @@ on a sealed eliminator or on `open` to `REFUSE_UNSEAL` or `REFUSE_OPEN`
 (Q-S4-1 (a)), and `REFUSE_READ` to `REFUSE_DIV` for `Amount` and
 `Height` (Q-S5-5 (a)). The code of `REFUSE_READ` on the other base types
 is fixed at S8.
+
+S7 (2026-11-07) builds `REFUSE_FLOOR` (Q-S7-1 (a)): the checker
+(`law_field` in `src/front/check.c`) refuses a `Params` term with a
+proof field `prFloor` or `prRange` that the kernel cannot check. The
+rows: `test/check/floor-params.lang` (t 1, below `tMin` 2, with `refl`
+for `prFloor`) and `test/check/floor-range.lang` (a price tier 0, with
+`refl` for `prRange`), each `REFUSE_FLOOR` in `test/check/expect.txt`.
 
 ## 8. Route
 
@@ -911,8 +1156,8 @@ gate; logs that are kept come from a serial run.
 | S4 | R1 formers, `Enc` and `open` (Q-S0-3) | DONE (2026-11-06) |
 | S5 | Base types of design sec 3 | DONE (2026-11-06) |
 | S6 | Swap operations and laws S1, S2, S3, S5, N1 | DONE (2026-11-07) |
-| S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3; the ledger and the certified `open` in `settle` (Q-S6-6 (a)), N1 in the replay form (Q-S6-4 (a)), OI-8 | NEXT |
-| S8 | Refusal codes, `check --json`, `langc fmt` | |
+| S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3; the ledger and the certified `open` in `settle` (Q-S6-6 (a)), N1 in the replay form (Q-S6-4 (a)), OI-8 | DONE (2026-11-07) |
+| S8 | Refusal codes, `check --json`, `langc fmt` | NEXT |
 | S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD`, the BN254 field and curve, Poseidon (Q-S0-13 (a)), the signature check (OI-17), the C oracle rows (Q-S1-5 (a)) | |
 | S8c | The crypto prelude part 2 (Q-S1-1 (a)): the BN254 pairing and the Noir verifier (the T2 relations, the TFHE share proof); the run time (OI-15) | |
 | S8d | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-4 (a)), the MPC output check | |
@@ -955,7 +1200,8 @@ and S14b. S9 needs S8b to S8d.
   the ledger needs deposit and withdraw entries in the log. Their shape is
   a question for S7 (the `Log` and `replay`). S6 does not need it: a
   `Transfer` is a token, an amount and two keys, and no S6 reason reads a
-  balance.
+  balance. Closed at S7 by Q-S7-4 (a): the `enDeposit` and `enWithdraw`
+  entries of the `Log`, and the `Book` (section 3).
 - OI-9 Committee key generation (DKG): EXTERNAL or a USER step.
 - OI-10 Solver choice: the first valid quote or an auction among solvers
   (`design/intent-swap-design.md` line 103).
@@ -984,3 +1230,6 @@ and S14b. S9 needs S8b to S8d.
 - OI-21 From S18 each gate run needs the network and the USER test inputs
   (Q-S0-29 (a)). A sandboxed session needs the facilitator host on its
   network allowlist.
+- OI-22 The decay window bounds and the deadlines stay in the intent,
+  not in `Params` (Q-S7-1 (a)). A `Params` limit on them, set by an
+  amendment, is a question for a later slice.

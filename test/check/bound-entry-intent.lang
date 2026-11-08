@@ -1,0 +1,4 @@
+-- A fill entry must retain the sealed input amount's width too.
+def wideIntent : Intent -> Quote -> Certificate -> Height -> Amount -> Entry :=
+  fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) (a : Amount) =>
+    enFill (intent (itInTok i) (itOutTok i) (seal Amount (amScale h a)) (itMinOut i) (itDecoy i) (itStartOut i) (itWindow i) (itDeadline i) (itNf i) (itOwner i) (itSig i)) q c h

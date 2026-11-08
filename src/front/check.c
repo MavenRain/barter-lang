@@ -2427,6 +2427,37 @@ static const Core *family_app(Call *k, uint32_t fam) {
   return core_op(c, OP_FAMILY, fam, 0, cores, n);
 }
 
+/* Q-S7-1 (a): the proof fields of Params. The field type is the law, so a
+   kernel failure of the field already stops the check; the failure gets
+   the code REFUSE_FLOOR for every term (gavel-lang REFUSE_FORK is the
+   model). */
+static const struct {
+  const char *family;
+  const char *field;
+  const char *code;
+  const char *law;
+  const char *ruling;
+} LAW_FIELDS[] = {
+  {"Params", "prFloor", "REFUSE_FLOOR", "G3 (tMin <= prT, with tMin = 2)", "Q-S7-1 (a)"},
+  {"Params", "prRange", "REFUSE_FLOOR", "of the price range (each tier from 1 to 20 cents)", "Q-S7-1 (a)"},
+};
+
+static void law_field(Checker *c, const CtorInfo *ci, uint32_t j) {
+  Diag *d = c->m->diag;
+  const char *fam = c->m->families[ci->family].name;
+  const char *field = ci->fields[j].name;
+  uint32_t i;
+  if (d->code == NULL || strcmp(d->code, "OOM") == 0 || fam == NULL || field == NULL)
+    return;
+  for (i = 0; i < (uint32_t)(sizeof LAW_FIELDS / sizeof LAW_FIELDS[0]); i++) {
+    if (strcmp(fam, LAW_FIELDS[i].family) == 0 && strcmp(field, LAW_FIELDS[i].field) == 0) {
+      d->code = LAW_FIELDS[i].code;
+      snprintf(d->msg, sizeof d->msg, "the proof field %s of %s does not check, so the law %s does not hold; %s", field, ci->name, LAW_FIELDS[i].law, LAW_FIELDS[i].ruling);
+      return;
+    }
+  }
+}
+
 /* A constructor takes the family parameters (the indices), then its fields,
    then its interval arguments (a path constructor). */
 static const Core *ctor_app(Call *k, uint32_t ctor) {
@@ -2449,6 +2480,8 @@ static const Core *ctor_app(Call *k, uint32_t ctor) {
   for (j = 0; j < ci->field_count; j++) {
     const Value *fv;
     cores[p + j] = check(c, k->args[p + j], eval_core(c->m, env, ci->fields[j].type));
+    if (cores[p + j] == NULL)
+      law_field(c, ci, j);
     fv = here(c, cores[p + j]);
     env = fv == NULL ? NULL : env_push(c->m, env, fv);
     if (env == NULL)
@@ -4339,10 +4372,24 @@ static int bound_field_kind(const BoundCx *x, const Core *t) {
   return t->inst == find_family(x->m, "Window") ? 3 : 0;
 }
 
-static int bound_kind_of(const BoundCx *x, const Value *t) {
+static int bound_record_kind(const BoundCx *x, uint32_t family) {
   const FamilyInfo *f;
   const CtorInfo *c;
   uint32_t i;
+  f = &x->m->families[family];
+  if (f->ctor_count != 1u)
+    return 0;
+  c = &x->m->ctors[f->first_ctor];
+  if (c->interval_count != 0u)
+    return 0;
+  for (i = 0; i < c->field_count; i++) {
+    if (bound_field_kind(x, c->fields[i].type) != 0)
+      return 6 + (int)family;
+  }
+  return 0;
+}
+
+static int bound_kind_of(const BoundCx *x, const Value *t) {
   if (t != NULL && is_family(t, x->amount))
     return 1;
   if (t != NULL && is_family(t, x->height))
@@ -4357,17 +4404,7 @@ static int bound_kind_of(const BoundCx *x, const Value *t) {
     if (is_family(t->args[0], x->height))
       return 5;
   }
-  f = &x->m->families[t->inst];
-  if (f->ctor_count != 1u)
-    return 0;
-  c = &x->m->ctors[f->first_ctor];
-  if (c->interval_count != 0u)
-    return 0;
-  for (i = 0; i < c->field_count; i++) {
-    if (bound_field_kind(x, c->fields[i].type) != 0)
-      return 6 + (int)t->inst;
-  }
-  return 0;
+  return bound_record_kind(x, t->inst);
 }
 
 static void bound_sig(const BoundCx *x, const Value *t, BoundSig *s) {
@@ -4510,24 +4547,34 @@ static int bound_sealed_above(const BoundCx *x, const Core *t, uint32_t depth, i
   return 1;
 }
 
-/* A record parameter's direct base fields have their input widths. At a
+/* A record parameter's base fields have their input widths. At a
    call, retain that assumption only for another parameter or a constructor
-   whose direct base fields fit. A computed record has no bound summary. */
+   whose bounded fields fit, including nested records. Entry constructors
+   use the same check before their payloads enter a Log. A computed record
+   has no bound summary. */
 static int bound_record_above(const BoundCx *x, const Core *t, uint32_t depth, uint32_t family) {
   const FamilyInfo *f = &x->m->families[family];
-  const CtorInfo *c = &x->m->ctors[f->first_ctor];
+  const CtorInfo *c;
   uint32_t i;
   if (t != NULL && t->kind == CORE_GLOBAL && x->m->defs[t->index].origin == ORIGIN_PROGRAM)
     return bound_record_above(x, x->m->defs[t->index].body, 0u, family);
   if (t != NULL && t->kind == CORE_VAR && t->index < depth && depth - 1u - t->index < x->params &&
       depth - 1u - t->index < BOUND_PARAMS)
     return 0;
-  if (!core_op_is(t, OP_CTOR) || t->inst != f->first_ctor || t->argc < f->param_count + c->field_count)
+  if (!core_op_is(t, OP_CTOR) || t->inst < f->first_ctor || t->inst - f->first_ctor >= f->ctor_count)
+    return 1;
+  c = &x->m->ctors[t->inst];
+  if (t->argc < f->param_count + c->field_count)
     return 1;
   for (i = 0; i < c->field_count; i++) {
     int kind = bound_field_kind(x, c->fields[i].type);
     const Core *arg = t->args[f->param_count + i];
-    if (kind == 4 || kind == 5) {
+    if (kind == 0 && core_op_is(c->fields[i].type, OP_FAMILY))
+      kind = bound_record_kind(x, c->fields[i].type->inst);
+    if (kind >= 6) {
+      if (bound_record_above(x, arg, depth, (uint32_t)(kind - 6)))
+        return 1;
+    } else if (kind == 4 || kind == 5) {
       if (bound_sealed_above(x, arg, depth, kind))
         return 1;
     } else if (kind == 3) {
@@ -4572,7 +4619,8 @@ static int bound_walk(const BoundCx *x, const Core *t, uint32_t depth);
 static int bound_domain(const Machine *m, const Core *h) {
   return domain_global(m, h, "wClamp") || domain_global(m, h, "decayTest") || domain_global(m, h, "decayAt") ||
     domain_global(m, h, "cross") || domain_global(m, h, "settleFloor") || domain_global(m, h, "settleProof") ||
-    domain_global(m, h, "settlePair") || domain_global(m, h, "settleRest") || domain_global(m, h, "settle");
+    domain_global(m, h, "settlePair") || domain_global(m, h, "settleRest") || domain_global(m, h, "settle") ||
+    domain_global(m, h, "settleCert") || domain_global(m, h, "settleFunds") || domain_global(m, h, "gsFill");
 }
 
 /* The spine T with the global head H and N arguments (N is 0 for a bare
@@ -4639,6 +4687,12 @@ static int bound_walk(const BoundCx *x, const Core *t, uint32_t depth) {
   case CORE_OP:
     break;
   }
+  /* A replay entry carries the same Intent and Quote widths as settle.
+     Check at construction so packing the entry into a Log or passing a
+     replay function as a value cannot hide a widened payload. */
+  if (core_op_is(t, OP_CTOR) && x->m->ctors[t->inst].family == find_family(x->m, "Entry") &&
+      bound_record_above(x, t, depth, x->m->ctors[t->inst].family))
+    return 1;
   for (i = 0; i < t->argc; i++) {
     if (bound_walk(x, t->args[i], depth))
       return 1;

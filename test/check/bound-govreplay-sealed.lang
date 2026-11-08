@@ -1,0 +1,4 @@
+-- A Log must not hide the quote width from settlement during replay.
+def wideReplay : Params -> Intent -> Quote -> Certificate -> Height -> Amount -> Verdict GovState :=
+  fun (p : Params) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (a : Amount) =>
+    govReplay p (lgCons (enFill i (quote (seal Amount (amScale h a)) (qtSolver q)) c h) lgNil)

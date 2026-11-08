@@ -1,0 +1,3 @@
+-- REFUSE_FLOOR (Q-S7-1 (a)): the threshold 1 is below tMin = 2, so refl is
+-- not a proof of the field prFloor.
+def lowFloor : Params := params mbNil (htSucc htZero) htZero paNil (prices (amSucc amZero) (amSucc amZero) (amSucc amZero)) refl refl
