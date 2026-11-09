@@ -67,7 +67,7 @@ if ! rg -q -F 'the path at i1 is some 1201, but the type needs some 1200' "$tmp/
   fail=$((fail + 1))
 fi
 
-# A REFUSE_TIME refusal names the op-count form (S3, O3).
+# A REFUSE_CLOCK refusal (kernel REFUSE_TIME) names the op-count form (S3, O3).
 time_hint=0
 build/langc $(kit test/check/kit.txt time-block.lang) check test/check/time-block.lang 2>"$tmp/err" >/dev/null || true
 time_hint=$((time_hint + 1))
@@ -76,6 +76,92 @@ if ! rg -q -F 'count operations: a position is `len r` (an OpPos) and a deadline
   fail=$((fail + 1))
 fi
 echo "time hint: $time_hint checked"
+
+# S8 (Q-S8-2 (a)): a mapped code ends the text line with the kernel code.
+kernel_suffix=0
+build/langc $(kit test/check/kit.txt read-amount.lang) check test/check/read-amount.lang 2>"$tmp/err" >/dev/null || true
+kernel_suffix=$((kernel_suffix + 1))
+if ! rg -q '^langc: REFUSE_DIV: .* \(kernel REFUSE_READ\)$' "$tmp/err"; then
+  echo "FAIL read-amount.lang: the text line does not end with (kernel REFUSE_READ)"
+  fail=$((fail + 1))
+fi
+echo "kernel suffix: $kernel_suffix checked"
+
+# S8 (Q-S8-3 (a)): `langc check --json`. Each refusal row exits 1 with its
+# code and a hint on stdout and nothing on stderr. Each line of
+# test/json/expect.txt is `PATH STATUS FILE`: the stdout is test/json/FILE.
+json_rows=0
+json_refused() {
+  while read -r file code; do
+    path="$1/$file"
+    [ "$file" = "deep.lang" ] && path="$tmp/deep.lang"
+    status=0
+    build/langc $(kit "$1/kit.txt" "$file") check --json "$path" >"$tmp/json" 2>"$tmp/err" || status=$?
+    json_rows=$((json_rows + 1))
+    if [ "$status" -ne 1 ] || [ -s "$tmp/err" ] || ! rg -q -F "\"code\":\"$code\"," "$tmp/json" || ! rg -q -F '"hint":"' "$tmp/json"; then
+      echo "FAIL json $file: want exit 1, $code, a hint and no stderr, got exit $status: $(head -c 200 "$tmp/json")"
+      fail=$((fail + 1))
+    fi
+  done <"$1/expect.txt"
+}
+json_refused test/parse
+json_refused test/check
+echo "json refusals: $json_rows checked"
+json_lines=0
+while read -r path want_status want; do
+  status=0
+  build/langc check --json "$path" >"$tmp/json" 2>"$tmp/err" || status=$?
+  json_lines=$((json_lines + 1))
+  if [ "$status" -ne "$want_status" ] || [ -s "$tmp/err" ] || ! cmp -s "$tmp/json" "test/json/$want"; then
+    echo "FAIL json $path: want exit $want_status and test/json/$want, got exit $status: $(head -c 200 "$tmp/json")"
+    fail=$((fail + 1))
+  fi
+done <test/json/expect.txt
+for args in "check --json" "check --json $tmp/missing.lang"; do
+  status=0
+  build/langc $args >"$tmp/json" 2>/dev/null || status=$?
+  json_lines=$((json_lines + 1))
+  if [ "$status" -ne 2 ] || [ -s "$tmp/json" ]; then
+    echo "FAIL json $args: want exit 2 and no JSON, got exit $status"
+    fail=$((fail + 1))
+  fi
+done
+echo "json lines: $json_lines checked"
+
+# fmt (S8, Q-S8-4 (a)). For the domain and each example F, the fmt text A of
+# F is canonical: fmt A is A, and fmt A --check exits 0 with no output. S8
+# does not rewrite F. fmt --check refuses test/fmt/check.lang at line 3, and
+# an unknown fmt argument is a usage error (exit 2).
+fmt_rows=0
+for f in domain/domain.lang examples/*.lang; do
+  status=0
+  build/langc fmt "$f" >"$tmp/fmt-a.lang" 2>"$tmp/fmt.err" || status=$?
+  build/langc fmt "$tmp/fmt-a.lang" >"$tmp/fmt-b.lang" 2>>"$tmp/fmt.err" || status=$((status + 10))
+  build/langc fmt "$tmp/fmt-a.lang" --check >"$tmp/fmt.out" 2>>"$tmp/fmt.err" || status=$((status + 100))
+  if [ "$status" -eq 0 ] && cmp -s "$tmp/fmt-a.lang" "$tmp/fmt-b.lang" && [ ! -s "$tmp/fmt.out" ] && [ ! -s "$tmp/fmt.err" ]; then
+    fmt_rows=$((fmt_rows + 1))
+  else
+    echo "FAIL fmt $f: exit $status: $(head -n 1 "$tmp/fmt.err")"
+    fail=$((fail + 1))
+  fi
+done
+echo "fmt idempotent: $fmt_rows checked"
+status=0
+build/langc fmt --check test/fmt/check.lang >"$tmp/fmt.out" 2>"$tmp/fmt.err" || status=$?
+if [ "$status" -eq 1 ] && [ ! -s "$tmp/fmt.out" ] && [ "$(cat "$tmp/fmt.err")" = "test/fmt/check.lang:3: not canonical" ]; then
+  echo "fmt not canonical: 1 checked"
+else
+  echo "FAIL fmt --check test/fmt/check.lang: exit $status: $(head -n 1 "$tmp/fmt.err")"
+  fail=$((fail + 1))
+fi
+status=0
+build/langc fmt test/fmt/check.lang --bad >/dev/null 2>&1 || status=$?
+if [ "$status" -eq 2 ]; then
+  echo "fmt usage: 1 checked"
+else
+  echo "FAIL fmt usage: exit $status, want 2"
+  fail=$((fail + 1))
+fi
 
 # Each line of test/eval/expect.txt is `FILE NAME [ARGS] => OUTPUT`. `langc eval`
 # must exit 0 and print OUTPUT.

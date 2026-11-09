@@ -21,6 +21,8 @@
 #define NO_DEF UINT32_MAX
 
 #define FAIL(c, code, ...) diag_fail((c)->m->diag, (code), (c)->m->def, __VA_ARGS__)
+/* S8 (Q-S8-1 (a)): the section 7 CODE of the kernel code KERNEL. */
+#define FAILK(c, code, kernel, ...) diag_fail_kernel((c)->m->diag, (code), (kernel), (c)->m->def, __VA_ARGS__)
 
 typedef struct Scope Scope;
 struct Scope {
@@ -412,7 +414,7 @@ static int push_value(Checker *c, const char *name, const Value *type, const Val
   Scope *s;
   const Env *e;
   if (name != NULL && time_word(name))
-    return FAIL(c, "REFUSE_TIME", TIME_HINT, name);
+    return FAILK(c, "REFUSE_CLOCK", "REFUSE_TIME", TIME_HINT, name);
   s = arena_alloc(c->m->arena, sizeof *s);
   e = env_push(c->m, c->env, value);
   if (type == NULL || value == NULL || s == NULL || e == NULL)
@@ -2608,10 +2610,10 @@ static int unknown_name(Checker *c, const char *name) {
   size_t i;
   const char *hint = partial_hint(c, name);
   if (time_word(name))
-    return FAIL(c, "REFUSE_TIME", TIME_HINT, name);
+    return FAILK(c, "REFUSE_CLOCK", "REFUSE_TIME", TIME_HINT, name);
   for (i = c->decl_index; i < c->decls->count; i++) {
     if (strcmp(c->decls->items[i].name, name) == 0)
-      return FAIL(c, "REFUSE_REC", "%s is this definition or a later one; a definition can use only earlier ones (rule R3)", name);
+      return FAILK(c, "REFUSE_PARTIAL", "REFUSE_REC", "%s is this definition or a later one; a definition can use only earlier ones (rule R3)", name);
   }
   if (hint != NULL)
     return FAIL(c, "REFUSE_PARTIAL", "%s is a partial name: %s", name, hint);
@@ -2659,7 +2661,7 @@ static int resolve_head(Checker *c, const Term *head, Head *h) {
   if (!find_known(c, head->name, h))
     return unknown_name(c, head->name);
   if (guest(c) && h->kind == HEAD_BUILTIN && h->builtin->vis == VIS_CELL)
-    return FAIL(c, "REFUSE_CELL", "%s is a cons-list name, not a cell monad; a guest program uses FreeMon of domain/domain.lang (rule R1)", head->name);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is a cons-list name, not a cell monad; a guest program uses FreeMon of domain/domain.lang (rule R1)", head->name);
   return guest(c) && kit_head(c, h) ? kit_refused(c, head->name) : 1;
 }
 
@@ -2770,7 +2772,7 @@ static const Core *var_core(Checker *c, const char *name, const Value **type) {
     return core_index(c, CORE_GLOBAL, d);
   }
   if (time_word(name))
-    return nul(FAIL(c, "REFUSE_TIME", TIME_HINT, name));
+    return nul(FAILK(c, "REFUSE_CLOCK", "REFUSE_TIME", TIME_HINT, name));
   if (partial_hint(c, name) != NULL)
     return nul(FAIL(c, "REFUSE_PARTIAL", "%s is a partial name: %s", name, partial_hint(c, name)));
   return nul(FAIL(c, "NAME_UNKNOWN", "unknown name %s", name));
@@ -3119,7 +3121,7 @@ static const char *name_owner(const Checker *c, const char *name) {
 static int name_free(Checker *c, const char *name) {
   const char *why;
   if (time_word(name))
-    return FAIL(c, "REFUSE_TIME", TIME_HINT, name);
+    return FAILK(c, "REFUSE_CLOCK", "REFUSE_TIME", TIME_HINT, name);
   why = name_owner(c, name);
   return why == NULL ? 1 : FAIL(c, "REFUSE_NAME", "%s is %s (rule R4)", name, why);
 }
@@ -3174,12 +3176,12 @@ static int cell_header(Checker *c, const Decl *d, uint32_t first, uint32_t count
     const FamilyInfo *f = &c->m->families[first + s];
     for (k = 0; k < f->index_count; k++)
       if (cell_type_argument(f->index_types[k]))
-        return FAIL(c, "REFUSE_CELL", "%s has a type index; a cell signature binds its type arguments as uniform parameters (rule R1)", f->name);
+        return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s has a type index; a cell signature binds its type arguments as uniform parameters (rule R1)", f->name);
     for (k = 0; has_type_param(f) && k < f->param_count; k++) {
       if (count > 1u && f->param_types[k]->kind == CORE_UNIV)
-        return FAIL(c, "REFUSE_CELL", "%s has the type parameter %s in an and block; a type constructor is one cell signature (rule R1)", f->name, d[s].params[k].name);
+        return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s has the type parameter %s in an and block; a type constructor is one cell signature (rule R1)", f->name, d[s].params[k].name);
       if (f->param_types[k]->kind != CORE_UNIV)
-        return FAIL(c, "REFUSE_CELL", "%s has a type argument and the parameter %s is not a universe; a cell signature has only type parameters (rule R1)", f->name, d[s].params[k].name);
+        return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s has a type argument and the parameter %s is not a universe; a cell signature has only type parameters (rule R1)", f->name, d[s].params[k].name);
     }
   }
   return 1;
@@ -3207,12 +3209,12 @@ static int cell_field(Checker *c, uint32_t fam, const FieldInfo *out, uint32_t e
   const FamilyInfo *f = &c->m->families[fam];
   const Core *t = out->type;
   if (cell_param(f, t, earlier) < f->param_count)
-    return field_count == 1u ? 1 : FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the field %s has a type parameter as its type, so it must be the one field of its constructor (rule R1)", f->name, out->name);
+    return field_count == 1u ? 1 : FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cell signature: the field %s has a type parameter as its type, so it must be the one field of its constructor (rule R1)", f->name, out->name);
   if (own_family(c->m, fam, t, earlier) || (t->kind == CORE_PATHP && own_family(c->m, fam, t->b, earlier + 1u)))
     return 1;
   if (c->self_uses == 0u && cell_closed(t, 0u))
     return 1;
-  return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the field %s must be a type parameter, closed data, %s at its own parameters or a path in %s (rule R1)", f->name, out->name, f->name, f->name);
+  return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cell signature: the field %s must be a type parameter, closed data, %s at its own parameters or a path in %s (rule R1)", f->name, out->name, f->name, f->name);
 }
 
 /* Each type parameter has exactly one generator (S3, open point QA1:
@@ -3226,9 +3228,9 @@ static int cell_generators(Checker *c, const Decl *d, uint32_t fam) {
     for (i = 0; i < f->ctor_count; i++)
       gens += m->ctors[f->first_ctor + i].field_count == 1u && cell_param(f, m->ctors[f->first_ctor + i].fields[0].type, 0u) == k;
     if (gens == 0u)
-      return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the type parameter %s occurs in no constructor (rule R1)", f->name, d->params[k].name);
+      return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cell signature: the type parameter %s occurs in no constructor (rule R1)", f->name, d->params[k].name);
     if (gens > 1u)
-      return FAIL(c, "REFUSE_CELL", "%s is not a cell signature: the type parameter %s has %u generators (rule R1)", f->name, d->params[k].name, (unsigned)gens);
+      return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cell signature: the type parameter %s has %u generators (rule R1)", f->name, d->params[k].name, (unsigned)gens);
   }
   return 1;
 }
@@ -3653,7 +3655,7 @@ static int check_family(Checker *c, const Decl *d) {
     return 0;
   /* A sealed family is a cell monad (S5, rule O7). */
   if (d->is_sealed && (count != 1u || !has_type_param(&m->families[first])))
-    return FAIL(c, "REFUSE_CELL", "%s is sealed but is not a cell monad: a sealed family has a type parameter and no and block (rule O7)", d->name);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is sealed but is not a cell monad: a sealed family has a type parameter and no and block (rule O7)", d->name);
   for (s = 0; s < count; s++)
     m->families[first + s].sealed = d[s].is_sealed;
   return 1;
@@ -4024,6 +4026,41 @@ static int law_uses(const Machine *m, uint32_t trunc, const Core *t) {
   return 0;
 }
 
+/* S8 (Q-S8-1 (a)): the section 7 code of the first law-only use in T, or
+   NULL when T has none. open gives REFUSE_OPEN (Q-S4-1 (a)). decrypt,
+   observe and an elim, a fold or a projection of a sealed family give
+   REFUSE_UNSEAL. Another law-only def gives REFUSE_LAW. */
+static const char *law_code(const Machine *m, uint32_t trunc, const Core *t) {
+  const char *code = NULL;
+  int four = 0;
+  uint32_t i;
+  if (t == NULL || !law_uses(m, trunc, t))
+    return NULL;
+  if (t->kind == CORE_GLOBAL && strcmp(m->defs[t->index].name, "open") == 0)
+    return "REFUSE_OPEN";
+  if (t->kind == CORE_GLOBAL)
+    return strcmp(m->defs[t->index].name, "decrypt") == 0 || strcmp(m->defs[t->index].name, "observe") == 0 ? "REFUSE_UNSEAL" : "REFUSE_LAW";
+  if (t->kind != CORE_OP) {
+    four = t->kind == CORE_PATHP || t->kind == CORE_PAPP;
+    code = law_code(m, trunc, t->a);
+    code = code != NULL ? code : law_code(m, trunc, t->b);
+    code = code != NULL || !four ? code : law_code(m, trunc, t->args[0]);
+    return code != NULL || !four ? code : law_code(m, trunc, t->args[1]);
+  }
+  for (i = 0; i < t->argc && code == NULL; i++)
+    code = law_code(m, trunc, t->args[i]);
+  return code != NULL ? code : "REFUSE_UNSEAL";
+}
+
+/* The code of a refused law-only use: the first cause in the written type,
+   the quoted type or the body; REFUSE_LAW when none is found. */
+static const char *law_code3(const Machine *m, uint32_t trunc, const Core *type, const Core *quoted, const Core *body) {
+  const char *code = law_code(m, trunc, type);
+  code = code != NULL ? code : law_code(m, trunc, quoted);
+  code = code != NULL ? code : law_code(m, trunc, body);
+  return code != NULL ? code : "REFUSE_LAW";
+}
+
 /* Rule O7: a law type is, after the Pis (the loop of entry_of), a Path type
    or Trunc1 X. */
 static int law_type(Machine *m, uint32_t level, uint32_t trunc, const Value *t) {
@@ -4117,17 +4154,19 @@ static int base_uses(const Machine *m, uint32_t fam, uint32_t zero, uint32_t suc
   return 0;
 }
 
-/* Q-S5-5 (a): 1 if the written type or the body reads a base family. The
+/* Q-S5-5 (a): the BASE_FAMILIES row + 1 of the first base family that the
+   written type or the body reads, else 0 (S8: rows 1 to 3, Amount, Height
+   and Window, give REFUSE_DIV; the other rows REFUSE_UNSEAL). The
    quoted type is not walked: a program may state a law at an open value
    (amMax x y in a Path type normalizes to an elim). */
-static int base_read(const Machine *m, const Core *type, const Core *body) {
+static uint32_t base_read(const Machine *m, const Core *type, const Core *body) {
   uint32_t i;
   for (i = 0; i < BASE_FAMILY_COUNT; i++) {
     uint32_t fam = find_family(m, BASE_FAMILIES[i].family);
     uint32_t zero = bound_ctor(m, BASE_FAMILIES[i].zero);
     uint32_t succ = bound_ctor(m, BASE_FAMILIES[i].succ);
     if (fam != NO_FAMILY && (base_uses(m, fam, zero, succ, type) || base_uses(m, fam, zero, succ, body)))
-      return 1;
+      return i + 1u;
   }
   return 0;
 }
@@ -4738,6 +4777,7 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
   int program = d->origin == ORIGIN_PROGRAM;
   const Core *tc;
   int law;
+  uint32_t read;
   if (body == NULL || !check_sig(c, d, tv))
     return 0;
   if (has_history(m) && strcmp(d->name, "init") != 0 && !is_family(tv, m->state_family) && !history_ok(c, body, mentions_state(m, c->level, tv), 0, NULL))
@@ -4750,15 +4790,17 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
     return FAIL(c, "OOM", "out of memory");
   law = program ? law_uses(m, trunc, syntax_type) || law_uses(m, trunc, tc) || law_uses(m, trunc, body) : d->is_law;
   if (law && guest(c) && !law_type(m, c->level, trunc, tv))
-    return FAIL(c, "REFUSE_LAW", "%s uses a law-only name (decrypt, observe, an elim, fold or projection of a sealed family) but its type is not a law (a Path or Trunc1 codomain); rule O7", d->name);
+    return FAILK(c, law_code3(m, trunc, syntax_type, tc, body), "REFUSE_LAW", "%s uses a law-only name (decrypt, observe, an elim, fold or projection of a sealed family) but its type is not a law (a Path or Trunc1 codomain); rule O7", d->name);
   /* Q-S5-5 (a): a guest program reads a base type of design sec 3 only
      through the domain words. The domain file is exempt (program), as is
-     kit mode. S8 maps the kernel code to the sec 7 codes. */
-  if (program && guest(c) && base_read(m, syntax_type, body))
-    return FAIL(c, "REFUSE_READ", "%s reads a base type (Amount, Height, Window, Token, Nullifier, Key, Sig, Commitment or Root) by an elim, a fold, a projection or a successor on a term that is not a literal; a program uses only the domain words; Q-S5-5 (a)", d->name);
+     kit mode. S8 (Q-S8-1 (a)): Amount, Height or Window gives REFUSE_DIV,
+     another base type REFUSE_UNSEAL. */
+  read = program && guest(c) ? base_read(m, syntax_type, body) : 0u;
+  if (read != 0u)
+    return FAILK(c, read <= 3u ? "REFUSE_DIV" : "REFUSE_UNSEAL", "REFUSE_READ", "%s reads a base type (Amount, Height, Window, Token, Nullifier, Key, Sig, Commitment or Root) by an elim, a fold, a projection or a successor on a term that is not a literal; a program uses only the domain words; Q-S5-5 (a)", d->name);
   /* Q-S4-4 (a), Q-S5-3 (a): the parameter of Sealed is a base type. */
   if (program && guest(c) && cell_read(m, syntax_type, body))
-    return FAIL(c, "REFUSE_CELL", "%s seals a type that is not Amount, Height, Token or Sum Unit Unit (Sealed, seal, Enc, encBind or encMap); Q-S4-4 (a), Q-S5-3 (a)", d->name);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s seals a type that is not Amount, Height, Token or Sum Unit Unit (Sealed, seal, Enc, encBind or encMap); Q-S4-4 (a), Q-S5-3 (a)", d->name);
   info->bound_kind = 0;
   info->bound_hi = 0;
   info->bound_lo = 0;
@@ -4892,13 +4934,13 @@ static int cocell_shape(Checker *c, const Decl *d, uint64_t *n, CocellField *kin
   if (arrow == NULL)
     return FAIL(c, "OOM", "out of memory");
   if (d->block_count > 1u)
-    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it is in an and block; a type constructor is one signature (rule R1)", d->name);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cocell signature: it is in an and block; a type constructor is one signature (rule R1)", d->name);
   if (d->param_count != 1u)
-    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it has %u parameters; a cocell signature has one type parameter (rule R1)", d->name, (unsigned)d->param_count);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cocell signature: it has %u parameters; a cocell signature has one type parameter (rule R1)", d->name, (unsigned)d->param_count);
   if (d->index != NULL)
-    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it has a type index (rule R1)", d->name);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cocell signature: it has a type index (rule R1)", d->name);
   if (d->ctor_count != 1u || ctor->result != NULL || ctor->boundary != NULL)
-    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it must have one clause, with no result and no boundary (rule R1)", d->name);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cocell signature: it must have one clause, with no result and no boundary (rule R1)", d->name);
   pt = check_type(c, d->params[0].type, &level);
   if (pt == NULL)
     return 0;
@@ -4906,7 +4948,7 @@ static int cocell_shape(Checker *c, const Decl *d, uint64_t *n, CocellField *kin
   if (pn == NULL)
     return FAIL(c, "OOM", "out of memory");
   if (pn->kind != CORE_UNIV)
-    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: the parameter %s is not a universe; a cocell signature has one type parameter (rule R1)", d->name, d->params[0].name);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cocell signature: the parameter %s is not a universe; a cocell signature has one type parameter (rule R1)", d->name, d->params[0].name);
   *n = pn->nat;
   memset(arrow, 0, sizeof *arrow);
   arrow->kind = TERM_PI;
@@ -4926,13 +4968,13 @@ static int cocell_shape(Checker *c, const Decl *d, uint64_t *n, CocellField *kin
     if (t == NULL)
       return FAIL(c, "OOM", "out of memory");
     if (!cocell_kind(field, t, j, &kinds[j]))
-      return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: the field %s must be the observation %s, the cofield %s %s or a labelled cofield E -> %s %s with E closed (rule R1)",
+      return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cocell signature: the field %s must be the observation %s, the cofield %s %s or a labelled cofield E -> %s %s with E closed (rule R1)",
                   d->name, field->name, d->params[0].name, d->name, d->params[0].name, d->name, d->params[0].name);
     labels[j] = 0;
     if (kinds[j] == COCELL_LABELLED && check_type(c, field->type->left, &labels[j]) == NULL)
       return 0;
     if (labels[j] > *n)
-      return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: the label type of %s is in Type %llu, above Type %llu of %s (rule R1)",
+      return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cocell signature: the label type of %s is in Type %llu, above Type %llu of %s (rule R1)",
                   d->name, field->name, (unsigned long long)labels[j], (unsigned long long)*n, d->params[0].name);
     /* cocell_kind proved this domain closed. Keep its checked normal form
        rather than resolving the original syntax in a different scope. */
@@ -4942,7 +4984,7 @@ static int cocell_shape(Checker *c, const Decl *d, uint64_t *n, CocellField *kin
       return 0;
   }
   if (observations != 1u)
-    return FAIL(c, "REFUSE_CELL", "%s is not a cocell signature: it has %u observations; a cocell signature has exactly one (rule R1)", d->name, (unsigned)observations);
+    return FAILK(c, "REFUSE_FORMER", "REFUSE_CELL", "%s is not a cocell signature: it has %u observations; a cocell signature has exactly one (rule R1)", d->name, (unsigned)observations);
   for (j = 0; j < ctor->field_count; j++)
     if (!name_free(c, ctor->fields[j].name))
       return 0;
@@ -5220,15 +5262,15 @@ static int check_decl(Checker *c, const Decl *d) {
   if (d->is_state)
     return check_state(c, d);
   if (d->kind == DECL_FAMILY && d->origin == ORIGIN_PROGRAM)
-    return FAIL(c, "REFUSE_DATA", "a program cannot declare a family (rule R1); only domain/domain.lang can");
+    return FAILK(c, "REFUSE_BASE", "REFUSE_DATA", "a program cannot declare a family (rule R1); only domain/domain.lang can");
   if (d->kind == DECL_COFAMILY && d->origin == ORIGIN_PROGRAM)
-    return FAIL(c, "REFUSE_DATA", "a program cannot declare a cofamily (rule R1); only domain/domain.lang can");
+    return FAILK(c, "REFUSE_BASE", "REFUSE_DATA", "a program cannot declare a cofamily (rule R1); only domain/domain.lang can");
   if (d->is_law && d->origin == ORIGIN_PROGRAM)
     return FAIL(c, "REFUSE_DATA", "a program cannot declare a law def (rule O7); only domain/domain.lang can");
   if (d->kind == DECL_AXIOM)
     return FAIL(c, "REFUSE_AXIOM", "an axiom has no proof (rule R2)");
   if (d->is_rec)
-    return FAIL(c, "REFUSE_REC", "def rec is refused (rule R3); use fold or unfold");
+    return FAILK(c, "REFUSE_PARTIAL", "REFUSE_REC", "def rec is refused (rule R3); use fold or unfold");
   if (!kernel_sig(c, d) || !name_free(c, d->name))
     return 0;
   switch (d->kind) {
@@ -5243,7 +5285,9 @@ static int check_decl(Checker *c, const Decl *d) {
   return check_def(c, d);
 }
 
-int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, CheckMode mode) {
+/* Checks DECLS in order. *STOP is the index of the last decl that the
+   loop started (S8: the progress of check --json). */
+static int check_decls(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, CheckMode mode, size_t *stop) {
   Checker c;
   size_t ctors = 0;
   size_t extra = 0;
@@ -5273,6 +5317,7 @@ int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, C
   c.decls = decls;
   c.mode = mode;
   for (i = 0; i < decls->count; i++) {
+    *stop = i;
     checker_reset(&c, i, decls->items[i].name);
     if (!check_decl(&c, &decls->items[i]))
       return 0;
@@ -5281,6 +5326,32 @@ int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, C
   }
   m->def = NULL;
   return 1;
+}
+
+int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, CheckMode mode) {
+  size_t stop = 0;
+  return check_decls(arena, decls, m, diag, mode, &stop);
+}
+
+int check_program_progress(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, CheckMode mode, CheckProgress *progress) {
+  size_t stop = 0;
+  int ok = check_decls(arena, decls, m, diag, mode, &stop);
+  int failed = 0;
+  size_t j;
+  uint32_t k;
+  memset(progress, 0, sizeof *progress);
+  stop = ok ? decls->count : stop;
+  for (j = 0; j < decls->count; j++) {
+    progress->parsed += decls->items[j].origin == ORIGIN_PROGRAM;
+    progress->typed += decls->items[j].origin == ORIGIN_PROGRAM && j < stop;
+  }
+  for (k = 0; m->defs != NULL && k < m->def_count; k++)
+    progress->laws_discharged += m->defs[k].origin == ORIGIN_PROGRAM && m->defs[k].law_only;
+  failed = !ok && stop < decls->count && decls->items[stop].origin == ORIGIN_PROGRAM;
+  progress->laws_total = progress->laws_discharged + (failed && diag->kernel != NULL && strcmp(diag->kernel, "REFUSE_LAW") == 0);
+  progress->fail_line = failed ? decls->items[stop].line : 0;
+  progress->fail_col = failed ? decls->items[stop].col : 0;
+  return ok;
 }
 
 int entry_of(Machine *m, const Value *type, Entry *out) {

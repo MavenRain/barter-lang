@@ -3,6 +3,9 @@
 #include <string.h>
 
 #include "front/check.h"
+#include "front/fmt.h"
+#include "front/front.h"
+#include "front/json.h"
 #include "front/lexer.h"
 #include "front/parser.h"
 
@@ -153,19 +156,225 @@ static int internal_print_refused(const char *type, const char *body) {
   return ok;
 }
 
+/* S8 (Q-S8-3 (a)): json_string escapes a quote, a backslash, a newline, a
+   tab, a control byte and an invalid UTF-8 byte, and keeps valid UTF-8. */
+static int json_quote(void) {
+  const char *want = "\"a\\\"b\\\\c\\nd\\te\\u0001f\\ufffdg\xc3\xa9\"";
+  char buf[128];
+  size_t n;
+  FILE *f = fopen("build/json-quote.txt", "w+b");
+  if (f == NULL) {
+    fprintf(stderr, "FAIL json_quote: cannot open build/json-quote.txt\n");
+    return 0;
+  }
+  json_string("a\"b\\c\nd\te\001f\xffg\xc3\xa9", f);
+  rewind(f);
+  n = fread(buf, 1, sizeof buf - 1, f);
+  fclose(f);
+  buf[n] = '\0';
+  if (strcmp(buf, want) == 0) return 1;
+  fprintf(stderr, "FAIL json_quote: got %s\n", buf);
+  return 0;
+}
+
+/* The UTF-8 boundary rules exclude overlong encodings, surrogates and
+   scalars above U+10FFFF. An invalid byte becomes one replacement escape. */
+static int json_utf8(void) {
+  static const struct {
+    const char *text;
+    const char *want;
+  } rows[] = {
+    {"\xc0\xaf", "\"\\ufffd\\ufffd\""},
+    {"\xc1\xbf", "\"\\ufffd\\ufffd\""},
+    {"\xe0\x80\xaf", "\"\\ufffd\\ufffd\\ufffd\""},
+    {"\xed\xa0\x80", "\"\\ufffd\\ufffd\\ufffd\""},
+    {"\xf0\x80\x80\xaf", "\"\\ufffd\\ufffd\\ufffd\\ufffd\""},
+    {"\xf4\x90\x80\x80", "\"\\ufffd\\ufffd\\ufffd\\ufffd\""},
+    {"\xf5\x80\x80\x80", "\"\\ufffd\\ufffd\\ufffd\\ufffd\""},
+    {"\xe2\x82", "\"\\ufffd\\ufffd\""},
+    {"\xc2\x80\xdf\xbf", "\"\xc2\x80\xdf\xbf\""},
+    {"\xe0\xa0\x80\xed\x9f\xbf\xee\x80\x80\xef\xbf\xbf", "\"\xe0\xa0\x80\xed\x9f\xbf\xee\x80\x80\xef\xbf\xbf\""},
+    {"\xf0\x90\x80\x80\xf4\x8f\xbf\xbf", "\"\xf0\x90\x80\x80\xf4\x8f\xbf\xbf\""},
+  };
+  int ok = 1;
+  for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+    FILE *out = tmpfile();
+    char buf[128];
+    if (out == NULL) return 0;
+    json_string(rows[i].text, out);
+    rewind(out);
+    size_t n = fread(buf, 1, sizeof buf - 1, out);
+    fclose(out);
+    buf[n] = '\0';
+    if (strcmp(buf, rows[i].want) != 0) {
+      fprintf(stderr, "FAIL json_utf8 row %zu\n", i + 1);
+      ok = 0;
+    }
+  }
+  return ok;
+}
+
+/* S8 (Q-S8-4 (a)): the decl dump of tranche-lang, one node a line and no
+   positions, so a file and its fmt text can be compared. A term kind is
+   its TermKind number. */
+static void dump_term(FILE *out, const char *role, const Term *t, int depth) {
+  if (t == NULL) return;
+  fprintf(out, "%*s%s %d", depth * 2, "", role, (int)t->kind);
+  if (t->name != NULL) fprintf(out, " %s", t->name);
+  if (t->kind == TERM_NAT || t->kind == TERM_UNIV) fprintf(out, " %llu", (unsigned long long)t->nat);
+  fputc('\n', out);
+  dump_term(out, "left", t->left, depth + 1);
+  dump_term(out, "right", t->right, depth + 1);
+}
+
+static void dump_fields(FILE *out, const char *role, const Field *fields, size_t count, int depth) {
+  size_t i;
+  for (i = 0; i < count; i++) {
+    fprintf(out, "%*s%s %s%s\n", depth * 2, "", role, fields[i].name == NULL ? "_" : fields[i].name,
+            fields[i].history ? " history" : "");
+    dump_term(out, "type", fields[i].type, depth + 1);
+  }
+}
+
+/* dump_decls writes each decl of DECLS to PATH: its kind, name, flags and
+   block, then its params, index, type, body and ctors. */
+static int dump_decls(const char *path, const DeclList *decls) {
+  static const char *const KINDS[] = {"def", "axiom", "family", "cofamily"};
+  FILE *out = fopen(path, "wb");
+  size_t i, j;
+  if (out == NULL) return 0;
+  for (i = 0; i < decls->count; i++) {
+    const Decl *d = &decls->items[i];
+    fprintf(out, "%s %s%s%s%s%s block %zu %zu\n", KINDS[d->kind], d->name, d->is_rec ? " rec" : "",
+            d->is_state ? " state" : "", d->is_sealed ? " sealed" : "", d->is_law ? " law" : "",
+            d->block_first, d->block_count);
+    dump_fields(out, "param", d->params, d->param_count, 1);
+    dump_term(out, "index", d->index, 1);
+    dump_term(out, "type", d->type, 1);
+    dump_term(out, "body", d->body, 1);
+    for (j = 0; j < d->ctor_count; j++) {
+      fprintf(out, "  ctor %s\n", d->ctors[j].name);
+      dump_fields(out, "field", d->ctors[j].fields, d->ctors[j].field_count, 2);
+      dump_term(out, "result", d->ctors[j].result, 2);
+      dump_term(out, "boundary", d->ctors[j].boundary, 2);
+    }
+  }
+  return fclose(out) == 0;
+}
+
+/* same_files: the bytes of the files A and B are the same. */
+static int same_files(const char *a, const char *b) {
+  FILE *fa = fopen(a, "rb");
+  FILE *fb = fopen(b, "rb");
+  int ca = 0;
+  int same = fa != NULL && fb != NULL;
+  while (same && ca != EOF) {
+    ca = fgetc(fa);
+    same = ca == fgetc(fb);
+  }
+  if (fa != NULL) fclose(fa);
+  if (fb != NULL) fclose(fb);
+  return same;
+}
+
+/* fmt_dump (S8, ruling 4): FILE parses as a program (as langc fmt does),
+   and the decl dump of FILE (build/fmt-dump-a.txt) and of its fmt text
+   (build/fmt-dump-b.txt) are the same. */
+static int fmt_dump(const char *file) {
+  static char text[1 << 20];
+  Arena arena;
+  Diag diag;
+  TokenList tokens = {0};
+  TokenList again = {0};
+  DeclList decls = {0};
+  DeclList canon = {0};
+  FmtText out;
+  FILE *in = fopen(file, "rb");
+  size_t len = in == NULL ? 0 : fread(text, 1, sizeof text, in);
+  if (in != NULL) fclose(in);
+  if (in == NULL || len == sizeof text) {
+    fprintf(stderr, "FAIL fmt_dump: cannot read %s\n", file);
+    return 0;
+  }
+  arena_init(&arena, (size_t)1 << 30);
+  diag_init(&diag);
+  fmt_text_init(&out, &arena);
+  int ok = lex_source(&arena, file, text, len, &tokens, &diag)
+    && parse_source(&arena, file, ORIGIN_PROGRAM, &tokens, &decls, &diag)
+    && fmt_program(&out, decls.items, decls.count, &tokens)
+    && lex_source(&arena, file, out.data, out.len, &again, &diag)
+    && parse_source(&arena, file, ORIGIN_PROGRAM, &again, &canon, &diag);
+  ok = ok && decls.count > 0 && decls.count == canon.count
+    && dump_decls("build/fmt-dump-a.txt", &decls) && dump_decls("build/fmt-dump-b.txt", &canon)
+    && same_files("build/fmt-dump-a.txt", "build/fmt-dump-b.txt");
+  if (!ok) fprintf(stderr, "FAIL fmt_dump %s: %s\n", file, diag.code == NULL ? "the dumps differ" : diag.code);
+  arena_release(&arena);
+  return ok;
+}
+
+/* The original text parses, but a canonical spelling can cross a compiler
+   limit. The command must refuse that text before it reaches stdout. */
+static int fmt_limit(const char *kind, size_t count, const char *want) {
+  static char source[SOURCE_MAX_BYTES + 1u];
+  size_t at = 0;
+  if (strcmp(kind, "size") == 0) {
+    const char *tail = "\ndef n:Nat:=0\n";
+    at = SOURCE_MAX_BYTES - strlen(tail);
+    memset(source, 'a', at);
+    source[0] = '-';
+    source[1] = '-';
+    memcpy(source + at, tail, strlen(tail) + 1u);
+  } else {
+    int sigma = strcmp(kind, "sigma") == 0;
+    int lambda = strcmp(kind, "lambda") == 0;
+    at += (size_t)snprintf(source + at, sizeof source - at, "def deep : Type 0 := %s", lambda ? "fun (" : sigma ? "" : "(");
+    for (size_t i = 0; i < count; i++)
+      at += (size_t)snprintf(source + at, sizeof source - at, sigma ? "Sigma (x%zu : Nat) " : "x%zu ", i);
+    snprintf(source + at, sizeof source - at, "%s", sigma ? "Nat\n" : lambda ? ": Nat) => x0\n" : ": Nat) -> Nat\n");
+  }
+  Arena arena;
+  Diag diag;
+  TokenList toks = {0};
+  DeclList decls = {0};
+  FmtText out;
+  arena_init(&arena, (size_t)1 << 29);
+  diag_init(&diag);
+  fmt_text_init(&out, &arena);
+  int ok = lex_source(&arena, "fmt-limit", source, strlen(source), &toks, &diag)
+    && parse_source(&arena, "fmt-limit", ORIGIN_PROGRAM, &toks, &decls, &diag)
+    && fmt_program(&out, decls.items, decls.count, &toks);
+  if (ok) {
+    int valid = fmt_validate(&out, "fmt-limit", &diag);
+    ok = want == NULL ? valid && !diag.set : !valid && diag.set && strcmp(diag.code, want) == 0;
+  }
+  if (!ok) fprintf(stderr, "FAIL fmt %s limit: want %s, got %s\n", kind,
+                   want == NULL ? "accepted" : want, diag.code == NULL ? "accepted" : diag.code);
+  arena_release(&arena);
+  return ok;
+}
+
 int main(void) {
   int ok = 1;
+  ok &= json_quote();
+  ok &= json_utf8();
+  ok &= fmt_dump("examples/base.lang");
+  ok &= fmt_dump("domain/domain.lang");
+  ok &= fmt_limit("sigma", 400u, NULL);
+  ok &= fmt_limit("sigma", 510u, "PARSE_DEPTH");
+  ok &= fmt_limit("pi", 1001u, "PARSE_DEPTH");
+  ok &= fmt_limit("lambda", 1001u, "PARSE_DEPTH");
+  ok &= fmt_limit("size", 0u, "FMT_SIZE");
   ok &= checked_fixture("test/ir/lazy.lang");
   ok &= checked_fixture("test/ir/proof-trap.lang");
   /* Diagnostics can print binders while constructor slots are still unnamed. */
   ok &= domain("state State := makeState (value : fun (x : Nat) => x)", "TYPE_MISMATCH");
   /* Time words are forbidden in local scopes as well as declarations. */
-  ok &= domain("def bad : (now : Nat) -> Nat := fun x => x", "REFUSE_TIME");
-  ok &= domain("def bad : Nat -> Nat := fun clock => clock", "REFUSE_TIME");
-  ok &= domain("def bad : Nat -> Nat := fun time => 0", "REFUSE_TIME");
-  ok &= domain("def bad : Path Nat 0 0 := fun (block : I) => 0", "REFUSE_TIME");
-  ok &= domain("family Test (timestamp : Type 0) := makeTest (payload : timestamp)", "REFUSE_TIME");
-  ok &= domain("def bad : Path Nat 0 0 := fun epoch => 0", "REFUSE_TIME");
+  ok &= domain("def bad : (now : Nat) -> Nat := fun x => x", "REFUSE_CLOCK");
+  ok &= domain("def bad : Nat -> Nat := fun clock => clock", "REFUSE_CLOCK");
+  ok &= domain("def bad : Nat -> Nat := fun time => 0", "REFUSE_CLOCK");
+  ok &= domain("def bad : Path Nat 0 0 := fun (block : I) => 0", "REFUSE_CLOCK");
+  ok &= domain("family Test (timestamp : Type 0) := makeTest (payload : timestamp)", "REFUSE_CLOCK");
+  ok &= domain("def bad : Path Nat 0 0 := fun epoch => 0", "REFUSE_CLOCK");
   /* Counting an open higher cell must preserve its path boundaries. */
   ok &= len_roundtrip(
     "(r : FreeMon Unit) -> (p : Path (FreeMon Unit) (fmUnit Unit) r) -> Path Nat 0 (len Unit r)",
@@ -345,32 +554,32 @@ int main(void) {
   /* A type constructor is a cell signature (S3, rule R1): a cons list, a
      value parameter, a parameter in no constructor, an and block and two
      generators for one parameter (open point QA1) are refused. */
-  ok &= domain("family Lst (A : Type 0) := lstNil | lstCons (lstHead : A) (lstTail : Lst A)", "REFUSE_CELL");
-  ok &= domain("family Tagged (A : Type 0) (n : Nat) := tagged (taggedOf : A)", "REFUSE_CELL");
-  ok &= domain("family Phantom (A : Type 0) := phantom", "REFUSE_CELL");
-  ok &= domain("family Even (A : Type 0) := ez | es (oddPrev : Odd A) and Odd (A : Type 0) := os (evenPrev : Even A)", "REFUSE_CELL");
-  ok &= domain("family Two (A : Type 0) := genL (genLOf : A) | genR (genROf : A)", "REFUSE_CELL");
+  ok &= domain("family Lst (A : Type 0) := lstNil | lstCons (lstHead : A) (lstTail : Lst A)", "REFUSE_FORMER");
+  ok &= domain("family Tagged (A : Type 0) (n : Nat) := tagged (taggedOf : A)", "REFUSE_FORMER");
+  ok &= domain("family Phantom (A : Type 0) := phantom", "REFUSE_FORMER");
+  ok &= domain("family Even (A : Type 0) := ez | es (oddPrev : Odd A) and Odd (A : Type 0) := os (evenPrev : Even A)", "REFUSE_FORMER");
+  ok &= domain("family Two (A : Type 0) := genL (genLOf : A) | genR (genROf : A)", "REFUSE_FORMER");
   /* Aliases and indices must not hide type arguments from the cell check. */
   ok &= domain("def U : Type 1 := Type 0\n"
-               "family AliasList (A : U) := aliasNil | aliasCons (aliasHead : A) (aliasTail : AliasList A)", "REFUSE_CELL");
+               "family AliasList (A : U) := aliasNil | aliasCons (aliasHead : A) (aliasTail : AliasList A)", "REFUSE_FORMER");
   ok &= domain("def U : Type 1 := Type 0\n"
                "family AliasCell (A : U) := aliasEta (aliasValue : A)", NULL);
   ok &= domain("family IndexedList : Type 0 -> Type 0 := idxNil (idxA : Type 0) : IndexedList idxA "
-               "| idxCons (idxB : Type 0) (idxHead : idxB) (idxTail : IndexedList idxB) : IndexedList idxB", "REFUSE_CELL");
+               "| idxCons (idxB : Type 0) (idxHead : idxB) (idxTail : IndexedList idxB) : IndexedList idxB", "REFUSE_FORMER");
   ok &= domain("def U : Type 1 := Type 0\n"
-               "family IndexedAlias : U -> Type 0 := indexedAlias (indexedType : U) : IndexedAlias indexedType", "REFUSE_CELL");
-  ok &= domain("family Hkt (F : Type 0 -> Type 0) := hktNil | hktNode (hktValue : F Nat) (hktTail : Hkt F)", "REFUSE_CELL");
+               "family IndexedAlias : U -> Type 0 := indexedAlias (indexedType : U) : IndexedAlias indexedType", "REFUSE_FORMER");
+  ok &= domain("family Hkt (F : Type 0 -> Type 0) := hktNil | hktNode (hktValue : F Nat) (hktTail : Hkt F)", "REFUSE_FORMER");
   ok &= domain("def Kind : Type 1 := Type 0 -> Type 0\n"
-               "family HktAlias (F : Kind) := hktAliasNil", "REFUSE_CELL");
+               "family HktAlias (F : Kind) := hktAliasNil", "REFUSE_FORMER");
   /* Fixed operation labels are closed base data in a cell signature. */
   ok &= domain("family Labelled (A : Type 0) := labelledEta (labelledValue : A) "
                "| labelledNode (labelledTag : Nat) (labelledTail : Labelled A)", NULL);
   ok &= domain("family ClosedFn (A : Type 0) := closedEta (closedValue : A) "
                "| closedNode (closedLabel : (n : Nat) -> Path Nat n n) (closedTail : ClosedFn A)", NULL);
   ok &= domain("family BadLabel (A : Type 0) := badEta (badValue : A) "
-               "| badNode (badLabel : Unit -> A) (badTail : BadLabel A)", "REFUSE_CELL");
+               "| badNode (badLabel : Unit -> A) (badTail : BadLabel A)", "REFUSE_FORMER");
   ok &= domain("family Wrapped (A : Type 0) := wrappedEta (wrappedValue : A) "
-               "| wrappedNode (wrappedTail : Option (Wrapped A))", "REFUSE_CELL");
+               "| wrappedNode (wrappedTail : Option (Wrapped A))", "REFUSE_FORMER");
   ok &= domain("family F := makeF (field : Nat) (field : Flag)", "REFUSE_NAME");
   ok &= domain("family F := makeF (makeF : Nat)", "REFUSE_NAME");
   ok &= domain("family F := makeF (firstField : Nat) (secondField : Flag)", NULL);
@@ -427,34 +636,34 @@ int main(void) {
   ok &= domain("cofamily Hi (A : Type 1) := hiCorec (hiOut : A) "
                "(hiType : Type 0 -> Hi A) (hiNat : Nat -> Hi A)", NULL);
   ok &= domain("cofamily Dep (A : Type 0) := depCorec (depOut : A) "
-               "(depNext : Path A depOut depOut -> Dep A)", "REFUSE_CELL");
+               "(depNext : Path A depOut depOut -> Dep A)", "REFUSE_FORMER");
   ok &= domain("def U : Type 1 := Type 0\n"
                "cofamily AliasCo (A : U) := aliasCoCorec (aliasCoOut : A) (aliasCoNext : AliasCo A)", NULL);
-  ok &= domain("cofamily Np := npCorec (npOut : Nat)", "REFUSE_CELL");
+  ok &= domain("cofamily Np := npCorec (npOut : Nat)", "REFUSE_FORMER");
   ok &= domain("family Lab := l0 | l1\n"
-               "cofamily Vp (n : Lab) := vpCorec (vpOut : Lab)", "REFUSE_CELL");
-  ok &= domain("cofamily Tp (A : Type 0) (B : Type 0) := tpCorec (tpOut : A)", "REFUSE_CELL");
+               "cofamily Vp (n : Lab) := vpCorec (vpOut : Lab)", "REFUSE_FORMER");
+  ok &= domain("cofamily Tp (A : Type 0) (B : Type 0) := tpCorec (tpOut : A)", "REFUSE_FORMER");
   ok &= domain("family Lab := l0 | l1\n"
-               "cofamily Ix (A : Type 0) : Lab -> Type 0 := ixCorec (ixOut : A) : Ix A l0", "REFUSE_CELL");
-  ok &= domain("cofamily Ab (A : Type 0) := abCorec (abOut : A) and Other := other", "REFUSE_CELL");
-  ok &= domain("cofamily No (A : Type 0) := noCorec (noNext : No A)", "REFUSE_CELL");
-  ok &= domain("cofamily Two (A : Type 0) := twoCorec (twoA : A) (twoB : A)", "REFUSE_CELL");
+               "cofamily Ix (A : Type 0) : Lab -> Type 0 := ixCorec (ixOut : A) : Ix A l0", "REFUSE_FORMER");
+  ok &= domain("cofamily Ab (A : Type 0) := abCorec (abOut : A) and Other := other", "REFUSE_FORMER");
+  ok &= domain("cofamily No (A : Type 0) := noCorec (noNext : No A)", "REFUSE_FORMER");
+  ok &= domain("cofamily Two (A : Type 0) := twoCorec (twoA : A) (twoB : A)", "REFUSE_FORMER");
   ok &= domain("family Lab := l0 | l1\n"
-               "cofamily Tg (A : Type 0) := tgCorec (tgOut : A) (tgTag : Lab)", "REFUSE_CELL");
+               "cofamily Tg (A : Type 0) := tgCorec (tgOut : A) (tgTag : Lab)", "REFUSE_FORMER");
   ok &= domain("family Lab := l0 | l1\n"
-               "cofamily Dl (A : Type 0) := dlCorec (dlOut : A) (dlNext : Dl Lab)", "REFUSE_CELL");
-  ok &= domain("cofamily Dd (A : Type 0) := ddCorec (ddOut : A) (ddNext : Dd (Dd A))", "REFUSE_CELL");
-  ok &= domain("cofamily Ad (A : Type 0) := adCorec (adOut : A) (adNext : A -> Ad A)", "REFUSE_CELL");
-  ok &= domain("cofamily Pf (A : Type 0) := pfCorec (pfOut : A) (pfT : Pf A) (pfP : Path (Pf A) pfT pfT)", "REFUSE_CELL");
-  ok &= domain("cofamily Cf (A : Type 0) := cfCorec (cfOut : A) (cfNext : Cf A -> List (Cf A))", "REFUSE_CELL");
-  ok &= domain("cofamily Lu (A : Type 0) := luCorec (luOut : A) (luNext : Type 0 -> Lu A)", "REFUSE_CELL");
+               "cofamily Dl (A : Type 0) := dlCorec (dlOut : A) (dlNext : Dl Lab)", "REFUSE_FORMER");
+  ok &= domain("cofamily Dd (A : Type 0) := ddCorec (ddOut : A) (ddNext : Dd (Dd A))", "REFUSE_FORMER");
+  ok &= domain("cofamily Ad (A : Type 0) := adCorec (adOut : A) (adNext : A -> Ad A)", "REFUSE_FORMER");
+  ok &= domain("cofamily Pf (A : Type 0) := pfCorec (pfOut : A) (pfT : Pf A) (pfP : Path (Pf A) pfT pfT)", "REFUSE_FORMER");
+  ok &= domain("cofamily Cf (A : Type 0) := cfCorec (cfOut : A) (cfNext : Cf A -> List (Cf A))", "REFUSE_FORMER");
+  ok &= domain("cofamily Lu (A : Type 0) := luCorec (luOut : A) (luNext : Type 0 -> Lu A)", "REFUSE_FORMER");
   /* `sealed family` and `law def` are domain-only modifiers (S5, rule O7).
      A sealed family is a cell monad; a program cannot use either. */
   ok &= domain("sealed family Sl (A : Type 0) := slEta (slOf : A)", NULL);
   ok &= domain("sealed family Sl (A : Type 0) := slEta (slOf : A)\n"
                "law def slOut : (A : Type 0) -> Sl A -> A := fun A c => fold (fun a => a) c", NULL);
-  ok &= domain("sealed family Sc := sc0 | sc1", "REFUSE_CELL");
-  ok &= guest("sealed family Sl (A : Type 0) := slEta (slOf : A)", "REFUSE_DATA");
+  ok &= domain("sealed family Sc := sc0 | sc1", "REFUSE_FORMER");
+  ok &= guest("sealed family Sl (A : Type 0) := slEta (slOf : A)", "REFUSE_BASE");
   ok &= guest("law def lawId : Type 1 := Type 0", "REFUSE_DATA");
   /* slOut is a law def (rule O7): a guest use outside a law type is
      refused, a use in a Trunc1 argument is not law-only, and a program

@@ -25,6 +25,9 @@ void arena_release(Arena *arena);
 typedef struct {
   int set;
   const char *code;
+  /* The kernel code when CODE is a section 7 code of another name (S8,
+     Q-S8-2 (a)); else the same as CODE, or NULL. */
+  const char *kernel;
   char def[64];
   char msg[512];
 } Diag;
@@ -33,7 +36,10 @@ void diag_init(Diag *diag);
 /* Records the failure and returns 0, so a caller can write
    `return diag_fail(...)`. DEF is NULL when no definition applies. */
 int diag_fail(Diag *diag, const char *code, const char *def, const char *fmt, ...);
-/* Prints `langc: CODE: DEF: message`. */
+/* As diag_fail. The section 7 CODE has the kernel code KERNEL (S8). */
+int diag_fail_kernel(Diag *diag, const char *code, const char *kernel, const char *def, const char *fmt, ...);
+/* Prints `langc: CODE: DEF: message`, then ` (kernel K)` when the kernel
+   code K is not CODE. */
 void diag_print(const Diag *diag, FILE *out);
 
 #endif

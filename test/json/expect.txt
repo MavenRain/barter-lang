@@ -1,0 +1,3 @@
+examples/base.lang 0 base.json
+test/check/read-amount.lang 1 read-amount.json
+test/parse/ckks-decimal.lang 1 ckks-decimal.json

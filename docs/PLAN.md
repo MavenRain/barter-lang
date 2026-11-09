@@ -17,17 +17,15 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 to 1.9 list the questions for the USER,
+`design/DESIGN.md`. Sections 1.2 to 1.10 list the questions for the USER,
 and section 1.1 has the rulings.
 
-Status: S7 DONE (2026-11-07): governance is in the domain: `Params`
-with the price list, `govAmend`, the `Log`, the `Book`, the `settle` of
-S7 with the certificate and the funds check, `govReplay`, the laws G1,
-G2 and G3, and N1 in the replay form (sections 3 and 6), with the
-`REFUSE_FLOOR` check of the proof fields in the checker (section 7).
-Q-S4-1..4, Q-S5-1..10, Q-S6-1..6 and Q-S7-1..7 are ruled (a). Section
-1.9 has the S7 questions, all ruled. Next: S8 (refusal codes,
-`check --json`, `langc fmt`).
+Status: S8 DONE (2026-11-08): the refusal codes of section 7 with the
+map from the kernel codes, `langc check --json` with a fix hint for
+each code and the progress counts, and `langc fmt` with
+`langc fmt --check` (sections 7, 9 and 10). Q-S4-1..4, Q-S5-1..10,
+Q-S6-1..6, Q-S7-1..7 and Q-S8-1..4 are ruled (a). Section 1.10 has the
+S8 questions, all ruled. Next: S8b (the crypto prelude part 1).
 
 ## 1. Rulings and questions
 
@@ -116,6 +114,10 @@ Q-S4-1..4, Q-S5-1..10, Q-S6-1..6 and Q-S7-1..7 are ruled (a). Section
 | 2026-11-07 | Q-S7-5 (a) (Recommended): a fill with all checks at yes and a leg above the balance of its payer gives `accept Outcome unfilled`; the `Book` does not change and the nullifier is not spent. A withdraw above the balance gives `reject noFunds`, a tenth reason. | USER, S7 |
 | 2026-11-07 | Q-S7-6 (a) (Recommended): `replay p l` folds the log with the `Params` in force, the next `Params`, the height of the last amendment and the `Book`; the first rejected entry rejects the replay. G1: the replay of the amendment entries is the fold of `amend` (by induction on the log). G2: a fill at the height of an amendment settles with the old `Params`. G3: `prFloor` (by the type). | USER, S7 |
 | 2026-11-07 | Q-S7-7 (a) (Recommended): `n1Replay`: at each step of `replay`, a fill whose nullifier is in the spent set of the `Book` gives `reject reused` (one `cong`). The spend direction has closed `refl` rows. The ids stay `Nat`. | USER, S7 |
+| 2026-11-08 | Q-S8-1 "(a) Full map (Recommended)": `REFUSE_READ` gives `REFUSE_DIV` on `Amount`, `Height` and `Window`, and `REFUSE_UNSEAL` on `Token`, `Nullifier`, `Key`, `Sig`, `Commitment` and `Root`. `REFUSE_CELL` maps to `REFUSE_FORMER`, `REFUSE_TIME` to `REFUSE_CLOCK`, `REFUSE_REC` to `REFUSE_PARTIAL`, `REFUSE_DATA` on a program family or cofamily to `REFUSE_BASE`, and `REFUSE_LAW` to `REFUSE_UNSEAL` or `REFUSE_OPEN`. The lexer gives `REFUSE_CKKS` on a decimal literal. `REFUSE_RETRO` has no cause (G2). Edits: section 7. | USER, S8 |
+| 2026-11-08 | Q-S8-2 "(a) Both + kernel suffix (Recommended)": the text line and the JSON give the code of section 7. The text line ends with `(kernel K)` when the kernel code K is different, and the JSON has the field `kernel`. The mapped rows of `test/check/expect.txt` change. Edits: section 7, 10. | USER, S8 |
+| 2026-11-08 | Q-S8-3 "(a) diagnostics + progress (Recommended)": one JSON line with `diagnostics` (zero or one object: `code`, `kernel`, `file`, `line`, `col`, `def`, `message`, `hint`) and `progress` (`parsed`, `typed`, `laws_discharged`, `laws_total`); the hints are in `src/front/codes.c`; exit 0, 1 or 2. Edits: section 7, 9. | USER, S8 |
+| 2026-11-08 | Q-S8-4 "(a) Port, keep files (Recommended)": the tranche-lang printer with the comments, `langc fmt` and `langc fmt --check`, idempotence rows on each example and the domain; S8 does not rewrite the examples. Edits: section 9, 10. | USER, S8 |
 | 2026-11-07 | The replay state record is `GovState` (constructor `govState`, fields `ssCur`, `ssNext`, `ssAt` and `ssBook`), because `State` is the guest program state (`REFUSE_STATE`). | USER, S7 session 3 |
 | 2026-11-07 | The domain amendment operation is `govAmend`, because `amend` is a guest name in `examples/oneuse.lang`, `examples/regimes.lang` and 10 `test/check` files (rule R4, `REFUSE_NAME`). | USER, S7 session 4 |
 | 2026-11-07 | A withdrawal certificate signs a third `Statement` form, `smWithdraw (smWdKey : Key) (smWdTok : Token) (smWdAmt : Amount) (smWdAt : Height)`, checked at `prT` (as a fill). The order in `gsWithdraw` is `badCert`, then `noFunds`. | USER, S7 session 5 |
@@ -576,6 +578,66 @@ The ids stay `Nat`. (Recommended) (b) `Nullifier` gets a unary id with
 an equality that reduces by induction, so the spend direction is a
 general law. RULED (a).
 
+### 1.10 Questions for the USER (S8)
+
+S8 is the refusal codes, `check --json` and `langc fmt` (section 12).
+The survey (2026-11-08): the checker gives 20 `REFUSE_` codes and the
+kernel codes (`TYPE_MISMATCH`, `PATH_END` and others). Of the thirteen
+codes of section 7, it gives only `REFUSE_PARTIAL`, `REFUSE_BOUND`,
+`REFUSE_FLOOR` and `REFUSE_LAW`. `langc check` has no `--json` and
+`langc` has no `fmt`. tranche-lang (2b14b52) has both
+(`src/front/fmt.c`, `src/front/json.c`, a comment list in the lexer).
+
+Q-S8-1 The code map. (a) `REFUSE_READ` on `Amount`, `Height` or
+`Window` gives `REFUSE_DIV` (a `Window` is two heights). On `Token`,
+`Nullifier`, `Key`, `Sig`, `Commitment` or `Root` it gives
+`REFUSE_UNSEAL` (a read of an opaque value). The kernel codes with the
+cause of a code of section 7 map too: `REFUSE_CELL` to
+`REFUSE_FORMER`, `REFUSE_TIME` (`now`, `clock`, `timestamp`) to
+`REFUSE_CLOCK`, `REFUSE_REC` to `REFUSE_PARTIAL`, and `REFUSE_DATA` on
+a program family or cofamily to `REFUSE_BASE`. `REFUSE_LAW` on a sealed
+eliminator gives `REFUSE_UNSEAL`, and on `open` `REFUSE_OPEN`
+(Q-S4-1 (a)). The lexer gives `REFUSE_CKKS` on a decimal literal such
+as `1.5` (now `LEX_CHAR`). `REFUSE_RETRO` has no cause: an amendment
+applies from its height + 1 by construction (`gsCur`, G2), and section
+7 says so. The other kernel codes stay. (Recommended) (b) Only the map
+of section 7, with `REFUSE_UNSEAL` for the six id types.
+`REFUSE_BASE`, `REFUSE_CLOCK`, `REFUSE_RETRO` and `REFUSE_CKKS` wait
+for a later slice. (c) As (b), but `REFUSE_READ` on the six id types
+stays, as a fourteenth code. RULED (a).
+
+Q-S8-2 Where the map shows. (a) In both outputs. The text line
+`langc: CODE: ...` gives the code of section 7 and ends with
+`(kernel REFUSE_READ)` when the kernel code is different. The JSON
+object has the field `kernel`. The rows of `test/check/expect.txt` with
+a mapped code change to the new code (about 20 rows), and a gate row
+checks the kernel suffix. (Recommended) (b) Only in `check --json`; the
+text output and the 198 rows stay. (c) In both outputs, with no kernel
+code. RULED (a).
+
+Q-S8-3 The JSON shape. (a) One line on stdout:
+`{"diagnostics":[...],"progress":{"parsed":N,"typed":N,"laws_discharged":N,"laws_total":N}}`,
+the key order of tranche-lang without its `bounds`, `fails` and
+`tables`. The checker stops at the first refusal, thus the list has
+zero or one object, with the fields `code`, `kernel`, `file`, `line`,
+`col`, `def`, `message` and `hint`. The hint is one fixed sentence for
+each code, from a table in `src/front/codes.c`. Exit 0 (ok), 1
+(refused: the JSON on stdout, no text on stderr) or 2 (usage, IO or
+OOM: no JSON). (Recommended) (b) The same, without `progress`. (c) The
+same, and `check --json` also lists each code of section 7 with its
+hint. RULED (a).
+
+Q-S8-4 `langc fmt`. (a) Port the tranche-lang printer: the lexer keeps
+the `--` comments and the parser records the end of each declaration.
+`langc fmt PROG` prints the canonical text, and `langc fmt --check
+PROG` exits 1 when PROG is not canonical. Gate rows: for each file of
+`examples/` and for the domain, the canonical text of the canonical
+text is the same, and a C regression in `test/fronttool.c` shows the
+same declarations before and after. S8 does not rewrite the examples.
+(Recommended) (b) As (a), and S8 rewrites `examples/` and
+`domain/domain.lang` to the canonical text, so that `fmt --check`
+passes on each file. (c) As (a), but `fmt` drops the comments. RULED (a).
+
 ## 2. The reading of R0: no runtime error
 
 R0 says that langc accepts no program that can lead to a runtime error.
@@ -991,11 +1053,37 @@ check --json` gives each with a fix hint.
 | `REFUSE_WORD` | A user program that names `Word` or a `Word` operation (Q-S0-17 (b)). |
 
 Kernel codes. The checker of the port also gives codes that are not in
-this table. S8 maps them: `REFUSE_CELL` to `REFUSE_FORMER`, `REFUSE_LAW`
-on a sealed eliminator or on `open` to `REFUSE_UNSEAL` or `REFUSE_OPEN`
-(Q-S4-1 (a)), and `REFUSE_READ` to `REFUSE_DIV` for `Amount` and
-`Height` (Q-S5-5 (a)). The code of `REFUSE_READ` on the other base types
-is fixed at S8.
+this table. S8 (2026-11-08, Q-S8-1 (a)) maps them:
+
+| Kernel code | Code | Cause |
+|---|---|---|
+| `REFUSE_CELL` | `REFUSE_FORMER` | Each site. |
+| `REFUSE_TIME` | `REFUSE_CLOCK` | Each site (`now`, `clock`, `timestamp`). |
+| `REFUSE_REC` | `REFUSE_PARTIAL` | A forward name, or a `def rec`. |
+| `REFUSE_DATA` | `REFUSE_BASE` | A program family or cofamily. On a program law def it stays `REFUSE_DATA`. |
+| `REFUSE_LAW` | `REFUSE_UNSEAL` | A sealed eliminator, fold or projection, `decrypt` or `observe` (Q-S4-1 (a)). |
+| `REFUSE_LAW` | `REFUSE_OPEN` | `open` (Q-S4-1 (a)). On a law def name that is not one of these it stays `REFUSE_LAW`. |
+| `REFUSE_READ` | `REFUSE_DIV` | A read of `Amount`, `Height` or `Window` (Q-S5-5 (a)). |
+| `REFUSE_READ` | `REFUSE_UNSEAL` | A read of `Token`, `Nullifier`, `Key`, `Sig`, `Commitment` or `Root`. |
+
+The lexer gives `REFUSE_CKKS` on a decimal literal (digits, `.`, a
+digit). `REFUSE_RETRO` has no cause in the checker: an amendment applies
+from its height + 1 (`gsCur`, G2), so no program can state an amendment
+that applies at or before its own height. `REFUSE_WORD` comes with S8b.
+The other kernel codes stay.
+
+The text line is `langc: CODE: MESSAGE (kernel K)` when the kernel code
+K is different from CODE, else `langc: CODE: MESSAGE` (Q-S8-2 (a)).
+`langc check --json PROG` writes one line on stdout (Q-S8-3 (a)):
+`{"diagnostics":[...],"progress":{"parsed":N,"typed":N,"laws_discharged":N,"laws_total":N}}`.
+The list has zero or one diagnostic, with the keys `code`, `kernel`,
+`file`, `line`, `col`, `def`, `message` and `hint` in this order.
+`kernel` is null when K is CODE, and `def` is null when there is no def.
+The hint is one fixed sentence for each code, from the table in
+`src/front/codes.c`. The exit status is 0 (accepted), 1 (refused: the
+JSON on stdout, nothing on stderr) or 2 (usage, IO or memory: no JSON,
+the text line on stderr). On a parse error the progress counts are all
+zero.
 
 S7 (2026-11-07) builds `REFUSE_FLOOR` (Q-S7-1 (a)): the checker
 (`law_field` in `src/front/check.c`) refuses a `Params` term with a
@@ -1081,8 +1169,8 @@ an outward step that the USER does.
 
 | Pasted item | Where |
 |---|---|
-| One canonical form per operation, `langc fmt` | S8 |
-| `langc check --json`, fix hints, progress counts (parsed, typed, laws discharged) | S8 |
+| One canonical form per operation, `langc fmt` | S8, built (2026-11-08): `langc fmt PROG`, `langc fmt --check PROG` |
+| `langc check --json`, fix hints, progress counts (parsed, typed, laws discharged) | S8, built (2026-11-08): section 7 |
 | `SKILL.md` with 3 to 5 graded examples | S15 |
 | An MCP server in TinyCC (`langc mcp`) | S15 |
 | `AGENTS.md` and a README table on when to use the language | S0 DRAFT, S20 final |
@@ -1131,6 +1219,22 @@ gate; logs that are kept come from a serial run.
 - WRK rows (Q-S1-2 (a), Q-S1-3 (a)): n `barterd` members in member mode on
   local TCP links. The outputs equal the clear evaluation of the same
   circuit.
+- Refusal rows (S8): `test/check/expect.txt` has the mapped codes;
+  `test/parse/ckks-decimal.lang` gives `REFUSE_CKKS`; the gate row
+  `kernel suffix` checks the ` (kernel REFUSE_READ)` suffix on one
+  `REFUSE_DIV` row.
+- JSON rows (S8): the gate rows `json refusals` and `json lines` run
+  `langc check --json`; a C row in `test/fronttool.c` checks the JSON
+  quote.
+- fmt rows (S8): `fmt idempotent` (each `examples/*.lang` and
+  `domain/domain.lang`): fmt of the fmt text is the same text, and
+  `langc fmt --check` of the fmt text exits 0. `fmt not canonical`:
+  `langc fmt --check test/fmt/check.lang` exits 1 with
+  `test/fmt/check.lang:3: not canonical`. `fmt usage`: a bad option
+  exits 2. Both argument orders are accepted: `langc fmt --check PROG`
+  and `langc fmt PROG --check`. C rows in `test/fronttool.c`: the decl
+  dump of a file and of its fmt text are the same, and fmt refuses a
+  canonical text that crosses a limit (`PARSE_DEPTH`, `FMT_SIZE`).
 
 ## 11. Port sources
 
@@ -1157,8 +1261,8 @@ gate; logs that are kept come from a serial run.
 | S5 | Base types of design sec 3 | DONE (2026-11-06) |
 | S6 | Swap operations and laws S1, S2, S3, S5, N1 | DONE (2026-11-07) |
 | S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3; the ledger and the certified `open` in `settle` (Q-S6-6 (a)), N1 in the replay form (Q-S6-4 (a)), OI-8 | DONE (2026-11-07) |
-| S8 | Refusal codes, `check --json`, `langc fmt` | NEXT |
-| S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD`, the BN254 field and curve, Poseidon (Q-S0-13 (a)), the signature check (OI-17), the C oracle rows (Q-S1-5 (a)) | |
+| S8 | Refusal codes, `check --json`, `langc fmt` | DONE (2026-11-08) |
+| S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD`, the BN254 field and curve, Poseidon (Q-S0-13 (a)), the signature check (OI-17), the C oracle rows (Q-S1-5 (a)) | NEXT |
 | S8c | The crypto prelude part 2 (Q-S1-1 (a)): the BN254 pairing and the Noir verifier (the T2 relations, the TFHE share proof); the run time (OI-15) | |
 | S8d | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-4 (a)), the MPC output check | |
 | S9 | T1 lowering to one Wasm module with the prelude | |

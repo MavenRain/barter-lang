@@ -65,18 +65,35 @@ void diag_init(Diag *diag) {
   memset(diag, 0, sizeof *diag);
 }
 
-int diag_fail(Diag *diag, const char *code, const char *def, const char *fmt, ...) {
+static int diag_vfail(Diag *diag, const char *code, const char *kernel, const char *def, const char *fmt, va_list args) {
   if (diag->set) return 0;
   diag->set = 1;
   diag->code = code;
+  diag->kernel = kernel;
   snprintf(diag->def, sizeof diag->def, "%s", def == NULL ? "-" : def);
+  vsnprintf(diag->msg, sizeof diag->msg, fmt, args);
+  return 0;
+}
+
+int diag_fail(Diag *diag, const char *code, const char *def, const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  vsnprintf(diag->msg, sizeof diag->msg, fmt, args);
+  diag_vfail(diag, code, code, def, fmt, args);
+  va_end(args);
+  return 0;
+}
+
+int diag_fail_kernel(Diag *diag, const char *code, const char *kernel, const char *def, const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  diag_vfail(diag, code, kernel, def, fmt, args);
   va_end(args);
   return 0;
 }
 
 void diag_print(const Diag *diag, FILE *out) {
-  fprintf(out, "langc: %s: %s: %s\n", diag->code, diag->def, diag->msg);
+  if (diag->kernel != NULL && strcmp(diag->kernel, diag->code) != 0)
+    fprintf(out, "langc: %s: %s: %s (kernel %s)\n", diag->code, diag->def, diag->msg, diag->kernel);
+  else
+    fprintf(out, "langc: %s: %s: %s\n", diag->code, diag->def, diag->msg);
 }

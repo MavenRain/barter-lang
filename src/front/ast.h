@@ -84,6 +84,8 @@ typedef struct {
   int is_law;    /* `law def` (S5): the def is law-only (rule O7) */
   int line;
   int col;
+  int end_line; /* the line of the last token of the decl (S8 fmt) */
+  int end_col;  /* the column after the last token of the decl */
   const char *name;
   const Term *type;
   const Term *body;

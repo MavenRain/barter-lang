@@ -1,0 +1,3 @@
+-- REFUSE_CKKS (S8, Q-S8-1 (a)): a decimal literal is a CKKS real number.
+-- A program has no real numbers; it uses integer words such as Amount.
+def half : Amount := 1.5

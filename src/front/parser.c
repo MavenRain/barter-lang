@@ -643,10 +643,14 @@ int parse_source(Arena *arena, const char *source, Origin origin, const TokenLis
     size_t first = count;
     items = grow(&p, items, count, &cap, sizeof *items);
     if (items == NULL || !parse_decl(&p, &items[count])) return 0;
+    items[count].end_line = p.toks[p.pos - 1].line;
+    items[count].end_col = p.toks[p.pos - 1].col + (int)p.toks[p.pos - 1].len;
     count++;
     while (at_and(&p, &items[first])) {
       items = grow(&p, items, count, &cap, sizeof *items);
       if (items == NULL || !parse_and(&p, &items[count])) return 0;
+      items[count].end_line = p.toks[p.pos - 1].line;
+      items[count].end_col = p.toks[p.pos - 1].col + (int)p.toks[p.pos - 1].len;
       count++;
     }
     for (size_t k = first; k < count; k++) {

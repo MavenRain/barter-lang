@@ -13,6 +13,10 @@ typedef struct {
   Diag *diag;
   const char *source;
   int internal; /* lex_internal: `.` is a name character (S4) */
+  Arena *arena;
+  Comment *comments;
+  size_t comment_count;
+  size_t comment_cap;
 } Lexer;
 
 static const struct {
@@ -106,18 +110,49 @@ static Token *push(Lexer *lx, TokKind kind, size_t start, int line, int col) {
   return tok;
 }
 
-/* Skips white space and `--` comments to the end of the line. */
-static void skip_trivia(Lexer *lx) {
+/* A blank: a space, a tab or a carriage return. */
+static int is_blank(char c) {
+  return c == ' ' || c == '\t' || c == '\r';
+}
+
+/* Records the `--` comment at the current position, without trailing
+   blanks (S8 fmt). The comment array grows by doubling in the arena. */
+static int take_comment(Lexer *lx) {
+  size_t start = lx->pos;
+  int line = lx->line;
+  int col = lx->col;
+  while (lx->pos < lx->len && lx->text[lx->pos] != '\n') advance(lx, 1);
+  size_t end = lx->pos;
+  while (end > start && is_blank(lx->text[end - 1])) end--;
+  if (lx->comment_count == lx->comment_cap) {
+    size_t next = lx->comment_cap == 0 ? 8 : lx->comment_cap * 2;
+    Comment *fresh = arena_alloc(lx->arena, next * sizeof *fresh);
+    if (fresh == NULL) return diag_fail(lx->diag, "OOM", NULL, "%s: no memory for the comments", lx->source);
+    if (lx->comment_count > 0) memcpy(fresh, lx->comments, lx->comment_count * sizeof *fresh);
+    lx->comments = fresh;
+    lx->comment_cap = next;
+  }
+  Comment *comment = &lx->comments[lx->comment_count];
+  lx->comment_count++;
+  comment->text = lx->text + start;
+  comment->len = end - start;
+  comment->line = line;
+  comment->col = col;
+  return 1;
+}
+
+/* Skips white space and records `--` comments to the end of the line. */
+static int skip_trivia(Lexer *lx) {
   for (;;) {
     char c = peek(lx, 0);
-    int space = lx->pos < lx->len && (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+    int space = lx->pos < lx->len && (is_blank(c) || c == '\n');
     int comment = c == '-' && peek(lx, 1) == '-';
-    if (!space && !comment) return;
+    if (!space && !comment) return 1;
     if (space) {
       advance(lx, 1);
       continue;
     }
-    while (lx->pos < lx->len && lx->text[lx->pos] != '\n') advance(lx, 1);
+    if (!take_comment(lx)) return 0;
   }
 }
 
@@ -151,6 +186,10 @@ static int lex_nat(Lexer *lx) {
   }
   if (overflow) {
     return diag_fail(lx->diag, "LEX_NAT_RANGE", NULL, "%s:%d:%d: a Nat literal is larger than 2^64 - 1", lx->source, line, col);
+  }
+  /* S8 (Q-S8-1 (a)): a decimal literal is a CKKS real; a program has none. */
+  if (peek(lx, 0) == '.' && is_digit(peek(lx, 1))) {
+    return diag_fail(lx->diag, "REFUSE_CKKS", NULL, "%s:%d:%d: a decimal literal is a CKKS real number; a program uses only integer words such as Amount (PLAN section 7)", lx->source, line, col);
   }
   if (is_ident_start(peek(lx, 0))) {
     return diag_fail(lx->diag, "LEX_CHAR", NULL, "%s:%d:%d: a letter follows a Nat literal", lx->source, lx->line, lx->col);
@@ -214,9 +253,10 @@ static int lex_text(Arena *arena, const char *source, const char *text, size_t l
   Lexer lx = {
     .text = text, .len = len, .pos = 0, .line = 1, .col = 1,
     .out = tokens, .count = 0, .diag = diag, .source = source, .internal = internal,
+    .arena = arena, .comments = NULL, .comment_count = 0, .comment_cap = 0,
   };
   for (;;) {
-    skip_trivia(&lx);
+    if (!skip_trivia(&lx)) return 0;
     if (lx.pos >= lx.len) break;
     char c = peek(&lx, 0);
     int ok = is_ident_start(c) || (lx.internal && c == '.') ? lex_ident(&lx) : is_digit(c) ? lex_nat(&lx) : lex_symbol(&lx);
@@ -225,6 +265,8 @@ static int lex_text(Arena *arena, const char *source, const char *text, size_t l
   push(&lx, TOK_EOF, lx.pos, lx.line, lx.col);
   out->items = tokens;
   out->count = lx.count;
+  out->comments = lx.comments;
+  out->comment_count = lx.comment_count;
   return 1;
 }
 
