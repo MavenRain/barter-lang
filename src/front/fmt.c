@@ -65,6 +65,20 @@ static void put_nat(FmtText *out, uint64_t n) {
   put_bytes(out, digits + at, sizeof digits - at);
 }
 
+/* A Word is 0x, eight lower-case hex digits and w, as print_result
+   writes it. The lexer keeps the value only, so fmt has one spelling. */
+static void put_word(FmtText *out, uint64_t w) {
+  char digits[8];
+  size_t at = sizeof digits;
+  while (at > 0) {
+    digits[--at] = "0123456789abcdef"[w % 16u];
+    w /= 16u;
+  }
+  put_str(out, "0x");
+  put_bytes(out, digits, sizeof digits);
+  put_str(out, "w");
+}
+
 /* Type n and Sigma are parenthesized as an argument, so they sit at the
    application level; `~` binds tighter than application. A system and a
    branch are never parenthesized. */
@@ -82,6 +96,7 @@ static FmtLevel term_level(const Term *t) {
       return LEVEL_APP;
     case TERM_VAR:
     case TERM_NAT:
+    case TERM_WORD:
     case TERM_INEG:
     case TERM_SYSTEM:
     case TERM_BRANCH:
@@ -144,6 +159,7 @@ static void put_term(FmtText *out, const Term *t, FmtLevel level) {
   switch (t->kind) {
     case TERM_VAR: put_str(out, t->name); break;
     case TERM_NAT: put_nat(out, t->nat); break;
+    case TERM_WORD: put_word(out, t->nat); break;
     case TERM_APP: put_binary(out, t, " ", LEVEL_APP, LEVEL_ATOM); break;
     case TERM_LAM: put_lambda(out, t); break;
     case TERM_PI:

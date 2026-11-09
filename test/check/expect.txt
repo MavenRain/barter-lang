@@ -196,3 +196,5 @@ bound-rpgo-sealed.lang REFUSE_BOUND
 bound-gsfill-value.lang REFUSE_BOUND
 bound-entry-intent.lang REFUSE_BOUND
 bound-entry-height.lang REFUSE_BOUND
+word-type.lang REFUSE_WORD
+word-op.lang REFUSE_WORD

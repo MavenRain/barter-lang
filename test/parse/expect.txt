@@ -16,3 +16,4 @@ irrelevant-at.lang PARSE_EXPECT
 irrelevant-attr.lang LEX_CHAR
 affine-arrow.lang LEX_CHAR
 ckks-decimal.lang REFUSE_CKKS
+word-range.lang LEX_WORD_RANGE

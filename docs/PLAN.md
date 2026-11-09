@@ -17,15 +17,16 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 to 1.10 list the questions for the USER,
+`design/DESIGN.md`. Sections 1.2 to 1.11 list the questions for the USER,
 and section 1.1 has the rulings.
 
-Status: S8 DONE (2026-11-08): the refusal codes of section 7 with the
-map from the kernel codes, `langc check --json` with a fix hint for
-each code and the progress counts, and `langc fmt` with
-`langc fmt --check` (sections 7, 9 and 10). Q-S4-1..4, Q-S5-1..10,
-Q-S6-1..6, Q-S7-1..7 and Q-S8-1..4 are ruled (a). Section 1.10 has the
-S8 questions, all ruled. Next: S8b (the crypto prelude part 1).
+Status: S8b DONE (2026-11-08): the machine type `Word` with its 14
+operations and `REFUSE_WORD`, the domain family rename to `SwapWord`,
+the BN254 field `Fr` and `Fp` in the prelude, and the C oracle rows
+(sections 4, 7, 9 and 10). Q-S4-1..4, Q-S5-1..10, Q-S6-1..6,
+Q-S7-1..7, Q-S8-1..4 and Q-S8b-1..8 are ruled (a). Sections 1.10 and
+1.11 have the S8 and S8b questions, all ruled. Next: S8b2 (the crypto
+prelude part 1, second commit).
 
 ## 1. Rulings and questions
 
@@ -122,6 +123,14 @@ S8 questions, all ruled. Next: S8b (the crypto prelude part 1).
 | 2026-11-07 | The domain amendment operation is `govAmend`, because `amend` is a guest name in `examples/oneuse.lang`, `examples/regimes.lang` and 10 `test/check` files (rule R4, `REFUSE_NAME`). | USER, S7 session 4 |
 | 2026-11-07 | A withdrawal certificate signs a third `Statement` form, `smWithdraw (smWdKey : Key) (smWdTok : Token) (smWdAmt : Amount) (smWdAt : Height)`, checked at `prT` (as a fill). The order in `gsWithdraw` is `badCert`, then `noFunds`. | USER, S7 session 5 |
 | 2026-11-07 | The domain step and replay words are `govStep` and `govReplay` (rule R4: `step` is a state field in `test/check/state-fun-field.lang`, and `test/pathtool.c` makes a guest `def replay`). `amendFold` keeps its name. | USER, S7 session 5 |
+| 2026-11-08 | Q-S8b-1 "(a) Port gavel 904d899 (Recommended)": `CORE_WORD` and `VAL_WORD` (uint32, wrapping), `Word` and the 14 operations `wAdd` to `wEq`, the literals `31w` and `0x1fw` with `LEX_WORD_RANGE`, Wasm i64 with a 32-bit mask, a `TERM_WORD` case in `langc fmt`, `REFUSE_WORD` by name for a guest program. Edits: section 4, 7, 9, 10. | USER, S8b |
+| 2026-11-08 | Q-S8b-2 "(a) Rename family SwapWord (Recommended)": the domain family `Word` (the orbit words) becomes `SwapWord`, as gavel Q-S8-2 (a); the machine type is `Word`. | USER, S8b |
+| 2026-11-08 | Q-S8b-3 "(a) gavel Montgomery CIOS (Recommended)": `Fe` is 8 Words, least significant first, Montgomery form inside (CIOS), canonical at each boundary; `Fr` and `Fp` are `Fe`; a prelude section at the end of `domain/domain.lang`. | USER, S8b |
+| 2026-11-08 | Q-S8b-4 "(a) Native feMulC (Recommended)": a native field product `feMulC` (C CIOS in `eval.c`, a `Word` operation, a fixed charge of 64 steps); the guest `feMul` is the specification and oracle rows compare the two; the Wasm lowering calls the guest `feMul`; `ENTRY_PARAMS_MAX` 32 to 64 (gavel Q-S8a-4 (a), Q-S8a-5 (a)). | USER, S8b |
+| 2026-11-08 | Q-S8b-5 "(a) circomlib t=3 (Recommended)": Poseidon on `Fr`, t = 3, alpha 5, R_F 8, R_P 57, the quorum Grain constants as 204 `Fe` literals in Montgomery form from a C generator under `gen/`; `Hash` carries an `Fr`; a message word is poseidon2(tag, poseidon2(x, y)). | USER, S8b |
+| 2026-11-08 | Q-S8b-6 "(a) Schnorr G1 + keccak (Recommended)": closes OI-17. s*G = R + e*P, e = keccak256(R.x, R.y, P.x, P.y, m) mod r; `Key` holds a `Pt1`, `Sig` holds (R : `Pt1`, s : `Fr`); ASSUMED rows for Poseidon collision resistance, keccak as a random oracle and Schnorr EUF-CMA. | USER, S8b |
+| 2026-11-08 | Q-S8b-7 "(a) Byte copy in src/crypto (Recommended)": quorum 8d1a113 `src/crypto/{u256,bn254,keccak,poseidon}.{c,h}`; `test/cryptotool.c` rows; `gate.sh` evaluates each row with `langc --kit eval`; the kit file `test/crypto/crypto.lang` is outside the Wasm set; `langc` does not link `src/crypto`. | USER, S8b |
+| 2026-11-08 | Q-S8b-8 "(a) Two commits (Recommended)": S8b is `Word`, `REFUSE_WORD`, the rename, `Fr` and `Fp`, the oracle. S8b2 is `feMulC`, G1, Poseidon, keccak-256 and Schnorr; in `csHas` the `sgVrf` stand-in becomes the Schnorr check. The settle proof check keeps a stand-in until S8c; `badShare` comes with S8c. Edits: section 12. | USER, S8b |
 
 The seed is `bin/new-lang.sh barter-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -638,6 +647,80 @@ same declarations before and after. S8 does not rewrite the examples.
 `domain/domain.lang` to the canonical text, so that `fmt --check`
 passes on each file. (c) As (a), but `fmt` drops the comments. RULED (a).
 
+### 1.11 Questions for the USER (S8b)
+
+S8b is the crypto prelude part 1 (section 12). The sources are gavel-lang
+904d899 (`Word`, `Fr` and `Fp`, the C oracle), the gavel-lang S8a
+rulings (the curve, Poseidon and Schnorr; not committed in gavel) and
+quorum-lang 8d1a113 `src/crypto`. tranche-lang `U256` is checked
+256-bit arithmetic with division, thus it is not a source for `Word`.
+
+Q-S8b-1 The `Word` port. (a) Port gavel 904d899: `CORE_WORD` and
+`VAL_WORD` (uint32, wrapping, O(1)), `Word` and the 14 operations
+`wAdd` to `wEq` (`wLt` and `wEq` give `Sum Unit Unit`), the literals
+`31w` and `0x1fw` with `LEX_WORD_RANGE`, `IR_SCALAR_WORD` lowered to
+Wasm i64 with a 32-bit mask, a `TERM_WORD` case in `langc fmt`, and
+`REFUSE_WORD` by name when the program is a guest program (`guest()`,
+the gavel `word_refused`). (Recommended) (b) As (a), but `REFUSE_WORD`
+by origin: a guest call to a prelude def that has `Word` in its type is
+also refused. RULED (a).
+
+Q-S8b-2 The name `Word`. The domain has `family Word : Size -> Type 0`
+(the orbit words, `actW`). (a) Rename the family to `SwapWord`, as gavel
+Q-S8-2 (a); the machine type is `Word`, as sections 4 and 7 say.
+(Recommended) (b) Keep the family; the machine type is `Word32`, and
+sections 4 and 7 change. RULED (a).
+
+Q-S8b-3 The field. (a) Copy the gavel field defs into a prelude section
+at the end of `domain/domain.lang`: `Fe` is 8 Words, least significant
+first, Montgomery form inside (CIOS), canonical at each boundary; `Fr`
+and `Fp` are `Fe`. (Recommended) (b) As (a), with the canonical form
+only (schoolbook product and reduction): more steps, no Montgomery
+constants. RULED (a).
+
+Q-S8b-4 The run cost of the curve. A G1 scalar product with a 256-bit
+scalar is about 83M steps under the evaluator (from the gavel S8a
+measure of 5.19M steps for a 16-bit scalar); the fuel is 20M. (a) As
+gavel Q-S8a-4 (a) and Q-S8a-5 (a): a native field product `feMulC` (C
+CIOS in `eval.c`, visible as a `Word` operation, a fixed charge of 64
+steps); the guest `feMul` stays the specification, oracle rows compare
+the two, and the Wasm lowering calls the guest `feMul`.
+`ENTRY_PARAMS_MAX` goes from 32 to 64. (Recommended) (b) Guest terms
+only: curve and signature rows use small scalars under the evaluator,
+and full scalars run in the Wasm module only. RULED (a).
+
+Q-S8b-5 Poseidon and `Hash`. (a) circomlib Poseidon on `Fr` (t = 3,
+alpha 5, R_F 8, R_P 57), the Grain constants of quorum `poseidon.c`
+written once as 204 `Fe` literals in Montgomery form by a C generator
+under `gen/`. `Hash` carries an `Fr`. A message word is
+poseidon2(tag, poseidon2(x, y)). (Recommended) (b) As (a), with t = 5
+for the intent tuple; quorum has t = 3 only, thus no oracle. RULED (a).
+
+Q-S8b-6 The signature scheme (OI-17). (a) Schnorr on BN254 G1 with a
+keccak-256 challenge, as gavel Q-S8-6 (a) and ratify-lang: s*G = R +
+e*P, e = keccak256(R.x, R.y, P.x, P.y, m) mod r. `Key` holds a `Pt1`,
+`Sig` holds (R : `Pt1`, s : `Fr`). ASSUMED rows: Poseidon collision
+resistance, keccak as a random oracle, Schnorr EUF-CMA. (Recommended)
+(b) As (a), with a Poseidon challenge: no keccak, and cheaper in a Noir
+relation at T2. (c) FROST on secp256k1 with SHA-256, as quorum
+`frost.c`: a second field and SHA-256. RULED (a).
+
+Q-S8b-7 The C oracle. (a) A byte copy of quorum 8d1a113
+`src/crypto/{u256,bn254,keccak,poseidon}.{c,h}` in `src/crypto/`;
+`test/cryptotool.c` writes the rows; `gate.sh` evaluates each row with
+`langc --kit eval` and prints `crypto oracle: N rows, M mismatches`; the
+field and curve rows are in a kit file `test/crypto/crypto.lang` outside
+the Wasm set; `langc` does not link `src/crypto`. (Recommended) (b)
+Compile from a sibling `../quorum-lang` checkout at 8d1a113, no copy; a
+fresh clone of barter-lang cannot run the gate. RULED (a).
+
+Q-S8b-8 The cut and the stand-ins. (a) Two commits, as gavel Q-S8-1 (a).
+S8b: `Word`, `REFUSE_WORD`, the rename, `Fr` and `Fp`, the oracle.
+S8b2: the native field product, G1, Poseidon, keccak-256, Schnorr; in
+`csHas` the `sgVrf` stand-in becomes the Schnorr check. The settle proof
+check keeps a stand-in until the S8c Noir verifier, and `badShare` comes
+with the S8c share check. (Recommended) (b) One commit with all of (a). RULED (a).
+
 ## 2. The reading of R0: no runtime error
 
 R0 says that langc accepts no program that can lead to a runtime error.
@@ -836,6 +919,23 @@ share check with a Noir proof for each share (Q-S1-1 (a)), the MPC output
 check, the WRK rounds of one member (Q-S1-2 (a)) and ChaCha20 over the
 run seed (Q-S1-4 (a)). quorum-lang `src/crypto` is the reference and a C
 oracle in the gate (Q-S1-5 (a)). `barterd` has no crypto code.
+
+S8b (2026-11-08) builds the first part of the prelude. `Word` is a
+kernel type (`CORE_WORD`, `VAL_WORD`; Q-S8b-1 (a)): a uint32 that
+wraps. Its 14 operations are `wAdd`, `wSub`, `wMul`, `wMulHi`, `wAnd`,
+`wOr`, `wXor`, `wNot`, `wShl`, `wShr`, `wRotl`, `wRotr`, `wLt` and
+`wEq`. A compare gives `Sum Unit Unit`: `inr tt` when the test holds.
+A literal is `31w` or `0x1fw`; a literal above 0xffffffff gives
+`LEX_WORD_RANGE`. The Wasm form is an i64 with a 32-bit mask, and the
+entry keeps the low 32 bits of a `Word` argument. The domain family
+`Word` (the orbit words) is now `SwapWord` (Q-S8b-2 (a)). The prelude
+section at the end of `domain/domain.lang` (Q-S8b-3 (a)) gives `Fe`: 8
+`Word`s, the least significant first, in Montgomery form (CIOS) inside
+and canonical at each boundary. `FeMod` holds a modulus. `Fr` and `Fp`
+are `Fe` with the moduli `frMod` and `fpMod` of BN254. `feAdd`,
+`feSub`, `feMul`, `fePow` and `feInv` are the field operations. The
+native field product `feMulC`, G1, Poseidon, keccak-256 and the Schnorr
+check come with S8b2 (Q-S8b-8 (a)).
 
 S5 (2026-11-06) builds the base types of design sec 3 at the end of
 `domain/domain.lang` (Q-S5-4 (a)). `Amount` and `Height` are unary
@@ -1069,8 +1169,11 @@ this table. S8 (2026-11-08, Q-S8-1 (a)) maps them:
 The lexer gives `REFUSE_CKKS` on a decimal literal (digits, `.`, a
 digit). `REFUSE_RETRO` has no cause in the checker: an amendment applies
 from its height + 1 (`gsCur`, G2), so no program can state an amendment
-that applies at or before its own height. `REFUSE_WORD` comes with S8b.
-The other kernel codes stay.
+that applies at or before its own height. S8b (2026-11-08) builds
+`REFUSE_WORD` (Q-S8b-1 (a)): a user program that names `Word`, a `Word`
+operation or a `Word` literal gets it. `domain/domain.lang` and a kit
+file with `--kit` can use them. The lexer gives `LEX_WORD_RANGE` on a
+`Word` literal above 0xffffffff. The other kernel codes stay.
 
 The text line is `langc: CODE: MESSAGE (kernel K)` when the kernel code
 K is different from CODE, else `langc: CODE: MESSAGE` (Q-S8-2 (a)).
@@ -1191,6 +1294,14 @@ an outward step that the USER does.
 | Start 4: list the tool in discovery surfaces | S17 files; listing USER |
 | Start 5: measure agent traffic and payments | S16 count log (Q-S0-26); reading USER |
 
+S8b (2026-11-08) adds two kit files: `examples/crypto.lang` (one def for
+each `Word` operation, in `examples/kit.txt`) and
+`test/crypto/crypto.lang` (the field rows, outside the Wasm set). The
+gate line `crypto oracle: N rows, M mismatches` tells an agent if a
+prelude change still agrees with the C oracle (section 10). The
+`check --json` hints of `REFUSE_WORD` and `LEX_WORD_RANGE` are in
+`src/front/codes.c`.
+
 USER steps: each deploy, which runs both `barterd` and `langc serve`
 (Q-S1-7 (a)); the TLS proxy of `langc serve` and the TLS proxy of the
 member links (Q-S1-3 (a)); each registry submission, the payTo wallet,
@@ -1215,7 +1326,25 @@ gate; logs that are kept come from a serial run.
   price outside $0.01 to $0.20 gives `reject bad_price`; a new price
   applies from h + 1; the 402 body names the height of its price.
 - Prelude rows (Q-S1-5 (a)): each prelude operation against quorum-lang
-  `src/crypto` as a C oracle on fixed vectors.
+  `src/crypto` as a C oracle on fixed vectors. S8b (Q-S8b-7 (a)):
+  `src/crypto/{u256,bn254,keccak,poseidon}.{c,h}` are byte copies of
+  quorum-lang 8d1a113, and `langc` does not link them.
+  `build/cryptotool` (`test/cryptotool.c`) writes 424 rows `FILE NAME
+  ARGS => RESULT`: 360 on `examples/crypto.lang` and 64 on
+  `test/crypto/crypto.lang`. The gate row `crypto oracle` runs each row
+  with `langc --kit eval` and gives 424 rows, 0 mismatches.
+  `langc --kit ir test/crypto/crypto.lang` refuses with `EVAL_DEPTH` at
+  `frInv` (the lowering nests deeper than 2000 levels), so the field
+  file is outside the Wasm set.
+- Word rows (S8b): 35 eval rows in `test/eval/expect.txt`;
+  `test/check/word-type.lang` and `test/check/word-op.lang` give
+  `REFUSE_WORD`; `test/parse/word-range.lang` gives `LEX_WORD_RANGE`.
+  `examples/crypto.lang` is a `fmt idempotent` row and a differential
+  module: a `Word` parameter takes 0w, 1w, 7w, 31w, 32w, 33w,
+  0x80000000w and 0xffffffffw. A gate row runs `weq 4294967297 1` on
+  the Wasm module and wants 1 (the entry keeps the low 32 bits). C rows
+  in `test/fronttool.c`: the domain file can use `Word`, its literals
+  and a `Word` `hcomp`; a guest `31w` gives `REFUSE_WORD`.
 - WRK rows (Q-S1-2 (a), Q-S1-3 (a)): n `barterd` members in member mode on
   local TCP links. The outputs equal the clear evaluation of the same
   circuit.
@@ -1262,7 +1391,8 @@ gate; logs that are kept come from a serial run.
 | S6 | Swap operations and laws S1, S2, S3, S5, N1 | DONE (2026-11-07) |
 | S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3; the ledger and the certified `open` in `settle` (Q-S6-6 (a)), N1 in the replay form (Q-S6-4 (a)), OI-8 | DONE (2026-11-07) |
 | S8 | Refusal codes, `check --json`, `langc fmt` | DONE (2026-11-08) |
-| S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD`, the BN254 field and curve, Poseidon (Q-S0-13 (a)), the signature check (OI-17), the C oracle rows (Q-S1-5 (a)) | NEXT |
+| S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD` (Q-S8b-1 (a)), the family rename to `SwapWord` (Q-S8b-2 (a)), the BN254 field `Fr` and `Fp` (Q-S8b-3 (a)), the C oracle rows (Q-S1-5 (a), Q-S8b-7 (a)) | DONE (2026-11-08) |
+| S8b2 | The crypto prelude part 1, second commit (Q-S8b-8 (a)): the native field product `feMulC` (Q-S8b-4 (a)), BN254 G1, Poseidon (Q-S0-13 (a), Q-S8b-5 (a)), keccak-256, the Schnorr check (OI-17, Q-S8b-6 (a)) in `csHas` | NEXT |
 | S8c | The crypto prelude part 2 (Q-S1-1 (a)): the BN254 pairing and the Noir verifier (the T2 relations, the TFHE share proof); the run time (OI-15) | |
 | S8d | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-4 (a)), the MPC output check | |
 | S9 | T1 lowering to one Wasm module with the prelude | |
@@ -1323,7 +1453,8 @@ and S14b. S9 needs S8b to S8d.
   member mode is fixed at S14c.
 - OI-17 The signature scheme of `Sig` and of the certificates is not
   ruled. gavel-lang uses Schnorr on BN254 G1 with a keccak-256 challenge
-  (gavel d71bd96:66). It is a question at S8b.
+  (gavel d71bd96:66). It is a question at S8b. RULED by Q-S8b-6 (a):
+  Schnorr on BN254 G1 with a keccak-256 challenge, built at S8b2.
 - OI-18 A race: a 402 names the price at height h, and then an amendment
   changes the price from h + 1 before the payment comes. The price that
   the payment must meet is a question at S16.

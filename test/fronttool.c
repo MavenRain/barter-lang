@@ -700,6 +700,13 @@ int main(void) {
      is wrong. */
   ok &= guest("def keep : Sum Unit Unit -> Sum Unit Unit := fun c => c", NULL);
   ok &= guest("def three : Nat := 3", "REFUSE_KIT");
+  /* S8b: the machine Word. The domain file can use Word, its ops and its
+     literals. A guest program gets REFUSE_WORD for a Word literal. */
+  ok &= domain("def wordKeep : Word -> Word := fun (x : Word) => wAdd x 0x1fw", NULL);
+  ok &= domain("def wordComp : Path Word (hcomp Word i0 (fun (i : I) => [ ]) 7w) 7w := refl", NULL);
+  ok &= domain("def wordTube : PathP (fun (j : I) => Path Word "
+               "(hcomp Word j (fun (i : I) => [ j -> 7w ]) 7w) 7w) refl refl := fun j => refl", NULL);
+  ok &= guest("def wordLit : Unit := 31w", "REFUSE_WORD");
   if (ok) puts("domain regressions: passed");
   return ok ? 0 : 1;
 }
