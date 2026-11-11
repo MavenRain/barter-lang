@@ -1,0 +1,6 @@
+-- S8b2 (USER ruling Q-S8b2-10 (a)): the check accepts this program, but the
+-- entry irX uses ptMulC on a run-time scalar. `langc ir` must refuse it with
+-- REFUSE_LOWER: the Wasm host does not lower ptMulC (HOST-LIMIT).
+def pgG : Pt1 := pt1 (feToMont fpMod (fe 1w 0w 0w 0w 0w 0w 0w 0w)) (feToMont fpMod (fe 2w 0w 0w 0w 0w 0w 0w 0w))
+def pb : Sum Unit Unit -> Nat := fun (s : Sum Unit Unit) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) s
+def irX : Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Nat := fun (a0 : Word) (a1 : Word) (a2 : Word) (a3 : Word) (a4 : Word) (a5 : Word) (a6 : Word) (a7 : Word) => pb (ptIsInf (ptMulC fpMod (fe a0 a1 a2 a3 a4 a5 a6 a7) pgG))

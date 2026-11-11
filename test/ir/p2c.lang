@@ -1,0 +1,7 @@
+-- S8b2 (USER ruling Q-S8b2-30 (a)): the check accepts this program, but the
+-- entry irX uses poseidon2C on run-time values. `langc ir` must refuse it with
+-- REFUSE_LOWER: the Wasm host does not lower poseidon2C (HOST-LIMIT).
+def pb : Sum Unit Unit -> Nat := fun (s : Sum Unit Unit) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) s
+def irX : Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Nat :=
+  fun (a0 : Word) (a1 : Word) (a2 : Word) (a3 : Word) (a4 : Word) (a5 : Word) (a6 : Word) (a7 : Word) (b0 : Word) (b1 : Word) (b2 : Word) (b3 : Word) (b4 : Word) (b5 : Word) (b6 : Word) (b7 : Word) =>
+    pb (feEq (poseidon2C (fe a0 a1 a2 a3 a4 a5 a6 a7) (fe b0 b1 b2 b3 b4 b5 b6 b7)) feOne)

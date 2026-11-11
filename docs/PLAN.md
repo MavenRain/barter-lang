@@ -17,16 +17,18 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 to 1.11 list the questions for the USER,
+`design/DESIGN.md`. Sections 1.2 to 1.12 list the questions for the USER,
 and section 1.1 has the rulings.
 
-Status: S8b DONE (2026-11-08): the machine type `Word` with its 14
-operations and `REFUSE_WORD`, the domain family rename to `SwapWord`,
-the BN254 field `Fr` and `Fp` in the prelude, and the C oracle rows
-(sections 4, 7, 9 and 10). Q-S4-1..4, Q-S5-1..10, Q-S6-1..6,
-Q-S7-1..7, Q-S8-1..4 and Q-S8b-1..8 are ruled (a). Sections 1.10 and
-1.11 have the S8 and S8b questions, all ruled. Next: S8b2 (the crypto
-prelude part 1, second commit).
+Status: S8b2 DONE (2026-11-11): the native field product `feMulC`,
+BN254 G1 with the native `ptMulC`, keccak-256, Poseidon with the native
+`poseidon2C`, the Schnorr check with the native `schnorrCheckC`, the
+message words, the domain fixtures, `opaque def`, and `Key` as a `Pt1`
+and `Sig` as R and s in `csHas` and `settle` (sections 4, 6, 10 and 13).
+Q-S4-1..4, Q-S5-1..10, Q-S6-1..6, Q-S7-1..7, Q-S8-1..4, Q-S8b-1..8 and
+Q-S8b2-1..7 are ruled (a). Sections 1.10 to 1.12 have the S8, S8b and
+S8b2 questions, all ruled. Q-S8b2-8..43 came up in the build; section
+1.1 has each ruling. Next: S8c (the crypto prelude part 2).
 
 ## 1. Rulings and questions
 
@@ -131,6 +133,50 @@ prelude part 1, second commit).
 | 2026-11-08 | Q-S8b-6 "(a) Schnorr G1 + keccak (Recommended)": closes OI-17. s*G = R + e*P, e = keccak256(R.x, R.y, P.x, P.y, m) mod r; `Key` holds a `Pt1`, `Sig` holds (R : `Pt1`, s : `Fr`); ASSUMED rows for Poseidon collision resistance, keccak as a random oracle and Schnorr EUF-CMA. | USER, S8b |
 | 2026-11-08 | Q-S8b-7 "(a) Byte copy in src/crypto (Recommended)": quorum 8d1a113 `src/crypto/{u256,bn254,keccak,poseidon}.{c,h}`; `test/cryptotool.c` rows; `gate.sh` evaluates each row with `langc --kit eval`; the kit file `test/crypto/crypto.lang` is outside the Wasm set; `langc` does not link `src/crypto`. | USER, S8b |
 | 2026-11-08 | Q-S8b-8 "(a) Two commits (Recommended)": S8b is `Word`, `REFUSE_WORD`, the rename, `Fr` and `Fp`, the oracle. S8b2 is `feMulC`, G1, Poseidon, keccak-256 and Schnorr; in `csHas` the `sgVrf` stand-in becomes the Schnorr check. The settle proof check keeps a stand-in until S8c; `badShare` comes with S8c. Edits: section 12. | USER, S8b |
+| 2026-11-08 | S8b2 source "Build without gavel": gavel-lang has no S8a commit; S8b2 is built from Q-S8b-4..8, Q-S8b2-1..7 and quorum-lang 8d1a113 `src/crypto`, with no gavel code. | USER, S8b2 |
+| 2026-11-08 | Q-S8b2-1 "(a) Native ptMulC (Recommended)": a C G1 scalar product `ptMulC md k p` in `eval.c` that does the guest `ptMul` field operation by field operation, a fixed charge; the guest `ptMul` is the specification; oracle rows compare the two; the Wasm lowering calls the guest `ptMul`. | USER, S8b2 |
+| 2026-11-08 | Q-S8b2-2 "(a) Schnorr owner check (Recommended)": in `settle` the owner check is the Schnorr check of `itSig` by `itOwner` on the intent message, reason `badProof`; the S8c Noir proof check comes after it with the same reason; the S1 laws keep their shape. | USER, S8b2 |
+| 2026-11-08 | Q-S8b2-3 "(a) Message words (Recommended)": `smFill` tag 0 on (nf, h), `smAmend` tag 1 on (root, h), `smWithdraw` tag 2 on (kh, poseidon2(tok, poseidon2(amt, h))) with kh = poseidon2(x mod r, y mod r); the intent message tag 3 on (nf, a poseidon2 chain of the tokens, the start amount, the window and the deadline); `ctCheck` gives the statement message to `csHas`. | USER, S8b2 |
+| 2026-11-08 | Q-S8b2-4 "(a) Domain fixtures (Recommended)": `fxKey1` to `fxKeyN` and one signature per signed example message in the domain file, printed by `cryptotool fixtures` with a fixed nonce; a gate row checks the text against the print; all `key n` and `sig n` users change. | USER, S8b2 |
+| 2026-11-08 | Q-S8b2-5 "(a) Hash, ids stay (Recommended)": `family Hash := hash (hsVal : Fr)`; `Nullifier`, `Root` and `Commitment` keep their `Nat` ids until S8c. | USER, S8b2 |
+| 2026-11-08 | Q-S8b2-6 "(a) Input checks (Recommended)": the Schnorr check says no when P or R is off the curve, when P is the point at infinity, or when s is not below r. | USER, S8b2 |
+| 2026-11-08 | Q-S8b2-7 "(a) Block above Token (Recommended)": the field section and the new crypto defs move above `Token`; `sAnd`, `sOr` and `sNot` move with them if the block uses them. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-8 "(a) Split rows": the oracle rows compare the native `ptMulC` with the guest `ptMul` only for the k that fit the 1 GiB arena of the evaluator: 0, 1, a 16-bit k, a 32-bit k, the point at infinity, a 64-bit k and 2^192. One guest `ptMul` with a k above approximately 2^192 stops at the arena limit. The rows compare `ptMulC` with `g1_mul` of `src/crypto/bn254.c` for 7 k: 0, 1, a 16-bit k, a 32-bit k, the point at infinity, a 254-bit k and 2^256 - 1. The arena and the fuel do not change. This ruling changes the oracle rows of Q-S8b2-1 (a). | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-9 "(a) C units": the fixed charge of `ptMulC` uses the unit of `feMulC`: 64 steps for each field product and 8 steps for each `feAdd` or `feSub`. The count is for the C `ptMulC` at 256 doubles, 256 adds and one `feInv`: 4976 x 64 + 4864 x 8 = 357376 steps. The counts: `ptDbl` 7 `feMul`, 8 `feAdd` and 4 `feSub`; the general `ptMadd` 11 `feMul` and 7 `feSub`; `feInv` over `fpE` (254 bits, 110 one bits) 364 products; `ptToAffine` 4 more `feMul`. The reason: a charge that fits the guest `ptMul` (48105904 steps) is more than the 20M fuel of one run. A `modE` chain with more than 364 `feInv` products adds 64 steps for each product after 364: `frE` (254 bits, 127 one bits) has 381 products, thus 358464 steps. The C counts the products of `modE` first. Then it spends the full charge one time, before the work. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-10 "(a) The Wasm host refuses ptMulC": `langc ir` refuses `ptMulC` with REFUSE_LOWER and the text `ptMulC (HOST-LIMIT)`. It does not expand the guest `ptMul`. This ruling changes the Wasm part of Q-S8b2-1 (a): the Wasm host does not call the guest `ptMul`. The reason is 2 limits of the lowering. (1) The IR has no call statement, thus each def unfolds. Each `ptMulWord` step gives approximately 3 times the IR of the step before it: the IR of 1 step is 6331840 bytes, of 2 steps 20439110 bytes, and 4 steps stop at the 1 GiB arena. Thus 256 steps cannot fit. (2) `feInv` and `ptToAffine` on a run-time value stop with EVAL_DEPTH: the lowering nests more than 2000 levels. `feMulC` still lowers as the guest `feMul` (118504 bytes of IR). The gate row `test/ir/ptmulc.lang` checks the refusal. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-11 "(a) Guest keccak, the sponge takes padded blocks": the domain file gets keccak-f[1600] (`keccakF`: 24 rounds as an elim over the `KRounds` list of the round constants) and a sponge that takes padded blocks of 17 lanes (`kfAbsorb`). The C oracle pads the 4 one-block rows ("", "abc", 55 bytes and 135 bytes). A `kcBlock` row has 34 lane Words and 8 digest Words (42 parameters). The guest pads only the 160-byte input of the Schnorr challenge (2 blocks: 0x01 at byte 24 and 0x80 at byte 135 of the second block). | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-12 "(a) Guest only": there is no native keccak operation. After the build, `langc --kit ir` of a keccak def is measured (the maximum resident set size and the IR size). When it lowers, there is no refusal row. When it stops (out of memory or `EVAL_DEPTH`), the USER rules again (as for Q-S8b2-10). | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-13 "(a) Canonical challenge": `kcChallenge` takes R.x, R.y, P.x, P.y and m as canonical `Fe` values and gives e mod r as a canonical `Fe` (5 conditional subtractions of r). Group 5 (`schnorrCheck`) does the change from the Montgomery form and sets its cost. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-14 "(a) A kit file for keccak": the keccak helpers and rows (`oKeccak`, `oHash160`, `oChallenge`, `kcBlock`, `kcHash`, `kcChal`) move to the new kit file `test/crypto/keccak.lang`, and the 10 keccak rows of `cryptotool` name it. `test/crypto/crypto.lang` goes back to its 37 lines from before the keccak rows. Reason: the check of the 6 keccak defs and the evaluation use the same 1 GiB arena, and the guest `ptMul` row at k = 2^192 (Q-S8b2-8 (a)) does not fit. The arena and the fuel do not change. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-15 "(a) Parameter, feMulC in use (Recommended)": the Poseidon permutation `psPerm` and `psHash2` take the field product as a parameter. `poseidon2` gives the native `feMulC` (Q-S8b-4 (a), 64 steps for each product). One oracle row gives the guest `feMul` (the specification) on poseidon2(1, 2). Reason: one permutation has 828 products; with the guest `feMul` a message word (two poseidon2) uses most of the 20M fuel. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-16 "(a) Canonical in and out (Recommended)": the inputs and the result of `poseidon2` are canonical, as the `Fr` of `kcChallenge` and of `Sig`. The 204 constants and the state are in Montgomery form: a product by R^2 puts a value in, and a product by 1 takes it out (3 more products for each call). | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-17 "(a) Tagged list (Recommended)": `family PsRounds := prEnd \| prFull \| prPart`, each node with 3 round constants. `psAll` holds the 65 nodes (4 full, 57 partial, 4 full), one node on each line; `psRounds` is an elim over the list. The 9 MDS values are the defs `psM00` to `psM22`. `gen/poseidon.c` prints these 10 defs from `poseidon_params`, and a gate row compares the print with `domain/domain.lang`. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-18 "(a) 9 rows (Recommended)": the kit file `test/crypto/poseidon.lang` has 5 `psPermC` rows ((0, 1, 2), (0, 0, 0), (r - 1, r - 1, r - 1) and 2 generator states), 3 `psHashC` rows ((1, 2), (0, 0) and 1 generator pair) and 1 `psHashG` row on (1, 2). `cryptotool` counts a wrong known answer of the C permutation (element 0 of the permutation of (0, 1, 2) is 0x115cc0f5..189a) as bad. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-19 "(a) Lower k to 2^160 (Recommended)": the guest `ptMul` row of Q-S8b2-8 (a) at k = 2^192 changes to k = 2^160 (160 doubles). Reason: the Poseidon defs added 123 lines to `domain/domain.lang` (1446 to 1569 lines). The check of the domain text and the evaluation use the same 1 GiB arena, and the row at k = 2^192 stops at the arena limit. The measurements: at k = 2^160 the row gives 1 in 2 s, with a maximum resident set size of 732446720 bytes; at k = 2^192 the row stops at the arena limit after 4 s. The rows that compare `ptMulC` with `g1_mul` of `src/crypto/bn254.c` keep their 7 k. The arena and the fuel do not change. This ruling changes the oracle rows of Q-S8b2-8 (a). | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-20 "(a) Part words now (Recommended)": group 5 adds `natToFr`, `amToFr` and `htToFr`, and one message word for each kind on its parts: `msFill` on (nf, h), `msAmend` on (root, h), `msWithdraw` on (P, tok, amt, h) with kh = poseidon2(x mod r, y mod r), and `msIntent`. Group 6 adds `smMsg` and `itMsg` on `Statement` and `Intent` after the `Key` switch. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-21 "(a) Jacobian compare, feMulC (Recommended)": the Schnorr equation computes J = ptMadd (ptMadd jcInf R) eP and compares it with sG as X = x Z^2 and Y = y Z^3. Z = 0 if and only if sG is the point at infinity. There is no `feInv`. The steps out of the Montgomery form (`scOut`) and the products of the compare use `feMulC` (64 steps each), as `poseidon2` does (Q-S8b2-15 (a)). | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-22 "(a) sk = n, keccak nonce (Recommended)": key n has the secret n (`fxKeyN` = n G). The nonce of each signature is keccak256(sk, m) mod r, on two 32-byte big-endian words. Thus the nonce is fixed and different for each message. s = nonce + e sk mod r. | USER, S8b2 |
+| 2026-11-09 | Q-S8b2-23 "(a) schnorr.lang, 11 rows (Recommended)": the new kit file `test/crypto/schnorr.lang` holds the Schnorr rows, because a heavy family of rows has its own file (Q-S8b2-14 (a)). It has 1 valid row, 6 invalid rows (s + 1, a wrong m, R off the curve, P off the curve, P at the point at infinity, s = r) and 4 message word rows (fill, amend, withdraw, intent) that compare the guest word with the C word. The oracle gets 11 more rows. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-24 "(a) Guest bit loop (Recommended)": `natToFr n` is `kcModR` of the value of n in 8 limbs of 32 bits. `natWord` gives one limb: an elim over the `PtCount` list `pc32` that takes `natMod n 2` and `natDiv n 2` at each step. Limbs 0 and 1 come from `natWord`, and limbs 2 to 7 are 0. The kernel has no elim over `Nat`. There is no new C operation and no new builtin. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-25 "(a) Right-nested msIntent (Recommended)": `msIntent` = msWord 3 nf (p2 tin (p2 tout (p2 st (p2 ws (p2 wl dl))))), with p2 = poseidon2. The window gives its two stored fields: ws is `winStart` and wl is `winLenPred`. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-26 "(a) Lower k to 2^128 (Recommended)": after the group 5 append, the guest `ptMul` row of Q-S8b2-19 (a) at k = 2^160 stops at the arena limit. This ruling changes k to 2^128 if that row fits. The result: the row at k = 2^128 also stops at the arena limit, and the old row at k = 2^64 - 1 stops at the arena limit too. A row at k = 2^96 gives 1. Thus no row changed, and Q-S8b2-27 (a) followed. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-27 "(a) Re-form msIntent (Recommended)": keep the message values of Q-S8b2-3 (a) and Q-S8b2-25 (a), and change the def form of `msIntent` and `msWithdraw`, so that the check does not build nested Poseidon normal forms. The bisect of the group 5 defs by check RSS: `msIntent` +355 MB (about 75% of the cost), `msWithdraw` +95 MB, `msWord` +29 MB, the Schnorr defs +10 MB in total. 5 forms were measured: F1a, F1b and F1c (one `poseidon2` in each helper def body), F2a and F2b (an elim over a list family of `Fe`). Each form gives the same message values. In each form the row at k = 2^64 - 1 stops at the arena limit. Not chosen: lower k, a native `poseidon2C`, a larger arena. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-28 "Arena meter first (Recommended)": no repository change. A meter copy of `langc` in the work directory prints the arena bytes after the check and at the arena limit, on a 1 GiB and on a 3 GiB arena. The arena after the check of the domain and `test/crypto/crypto.lang` is 175 MiB before group 5, 486 MiB with the group 5 guest defs and 304 MiB with F2b. The arena of one guest `ptMul` evaluation is 722, 512, 626 and 741 MiB at k = 2^64 - 1, 2^96, 2^128 and 2^160, the same in each form. The maximum resident set size is not the arena use. Q-S8b2-29 used these data. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-29 "(b) Native poseidon2C (Recommended)": a `VIS_WORD` builtin `poseidon2C`, as `feMulC` and `ptMulC`. It has a fixed charge, the guest `poseidon2` stays the specification, oracle rows compare the builtin with the guest, and the Wasm host refuses it. Reason: the guest Poseidon check uses both the arena and the fuel. On the 1 GiB arena, the total with F2b is 1026, 816, 930 and 1045 MiB at k = 2^64 - 1, 2^96, 2^128 and 2^160. On a 3 GiB arena, the group 5 guest stops with EVAL_FUEL (20000000 steps for the check and the evaluation together). Group 6 adds more `poseidon2` callers. Not chosen: (c) F2b and a 1.5 GiB arena; (d) F2b and lower rows. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-30 "(a) poseidon2C design (Recommended)": (i) a C mirror with 2 args, `poseidon2C a b` (`Fr` only). `eval.c` does `psHash2` operation by operation with `fe_mul` and `fe_add`, as `ptMulC` does `ptMul`. A C table from `build/poseidongen` holds the 204 Montgomery constants, r, n0' and R^2, and a gate row compares it with the generator. `langc` does not link the crypto layer. (ii) a fixed charge of 57864 steps = 831 x 64 + 585 x 8 (3 conversion products, 8 x 18 + 57 x 12 round products, 65 x 9 `feAdd`), spent once before the work. (iii) rows in `test/crypto/poseidon.lang`: a `psHashN` row (the builtin and the C oracle) for each `psHashC` row, and 3 `psHashD` rows (the builtin and the guest) on (0, 0), (1, 2) and (r - 1, r - 1). (iv) the direct callers (`msWord`, `msKey`, the `msWithdraw` tail, the `msIntent` chain) call `poseidon2C`. The guest `poseidon2` keeps its name and body as the specification. Group 6 calls `poseidon2C`. (v) the Wasm host refuses `poseidon2C (HOST-LIMIT)`. Not chosen: a link of `src/crypto/poseidon.c`; `poseidon2C md a b`; a charge of 57672 steps (the permutation only); a spend for each operation. The data after the switch: the arena after the check of the domain and `test/crypto/crypto.lang` is 182 MiB, and the guest `ptMul` rows at k = 2^64 - 1, 2^96, 2^128 and 2^160 give 1 on the 1 GiB arena with 905, 694, 809 and 923 MiB in total. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-31 "(a) Meter first": no repository change. A meter copy of `langc` in the work directory measures the fuel of the domain check with the group 6 text (the Schnorr check in `settle`), and finds the def or the law that spends the fuel. The data go into the next question, as in Q-S8b2-28. Not chosen at this time: a native `natToFrC`; s1 law types that do not hold `itMsg i`; a larger fuel limit. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-32 "(a) Meter schnorrCheck parts first": no repository change. Each meter variant of the group 6 text has a stub in place of one part of the `sgVrf` body (the challenge hash, the on-curve guards, the Jacobian compare), and one probe tests if a builtin on a variable argument stays stuck in the check. The data of Q-S8b2-31 refute a native `natToFrC` alone, law types without `itMsg i` and a larger fuel limit. Not chosen at this time: a native `schnorrCheckC`; a kernel opaque def form; the owner verdict as data in `settle`. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-33 "(a) schnorrCheckC + natToFrC": a `VIS_WORD` builtin `schnorrCheckC` for the full check (a fixed charge; the guest `schnorrCheck` stays the specification; oracle rows compare the builtin and the guest; the Wasm host refuses it; the C mirror holds keccak, because `langc` does not link the crypto layer), and a `VIS_WORD` builtin `natToFrC` (the guest `natToFr` stays the specification), so that the message `itMsg i` stays a small stuck term. The law shape of Q-S8b2-2 (a) does not change. Two meter rows come first. The data of Q-S8b2-32: no part of the check fits alone as a builtin; a stub body with `ptMulC` on p, r and s passes the check; `feMulC` with the message as an argument costs about 8M steps for each law. Not chosen: a meter only; the owner verdict as data in `settle`; a kernel opaque def form. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-34 "(a) Meter the use count": no repository change. A meter counts the builtin calls (`poseidon2C`, `feMulC`, `ptMulC`) and the unfolds of `itMsg`, `smMsg` and `msIntent` for each law, and rows test if the check evaluates `itMsg i` again at each use. The data before this ruling: with `feZero` in place of the message, the check passes with 4385230 steps; with `feZero` in place of `natToFr`, `s1Accept` uses 12971107 steps; with a small stuck `natToFr` (the model of `natToFrC`), `s1Accept` uses 12998387 steps. Thus Q-S8b2-33 (a) does not fit as ruled. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-35 "(d2) Opaque defs": a kernel opaque def form for `itMsg` and `smMsg`, and the builtin `schnorrCheckC`. The laws keep their shape (no change to Q-S8b2-2 (a)). The run path unfolds the def. The check keeps it stuck. The data of Q-S8b2-34: the check runs the `itMsg` body 208 times for each use of the message in each s1 law (9021133 steps with 1 use, 17833987 steps with 2 uses); a model with `itMsg i` and `smMsg s` small and stuck passes with 4367605 steps; the 1 GiB arena limit stops a row at about 23M steps. Not chosen: the verdict as data; binders for the two messages; sharing in the evaluator. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-36 "(a) schnorrCheckC shape": `schnorrCheckC p r s m`, `VIS_WORD`. `eval.c` mirrors the guest `schnorrCheck` operation by operation with the C helpers of `ptMulC`, and has a static keccak-f on 64-bit lanes (the algorithm of `src/crypto/keccak.c`; `langc` does not link the crypto layer). `sgVrf` calls `schnorrCheckC`. The guest `schnorrCheck` keeps its name and body as the specification. Rows: 7 rows in `test/crypto/schnorr.lang` that compare the builtin and the guest (the inputs of the 1 valid row and the 6 invalid rows), 1 `REFUSE_WORD` row for a user program, and 1 Wasm refusal row `schnorrCheckC (HOST-LIMIT)`. Not chosen: a 32-bit keccak mirror of `kcHash160`; one more row for each of the 13 fixture signatures. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-37 "(a) One spend, full sum": a fixed charge, spent once before the work: 2 x (357376 + 64 for each `feInv` product past 364) + 17456 = 732208 steps for `fpE`. The parts: 714752 (the two `ptMulC`), 2368 (64 x 37 field products: `ptOnCurve` 2 x 3, `scOut` 4, `ptMadd` 2 x 11, `scJacEq` 5), 208 (8 x 26 `feAdd` or `feSub`: `ptOnCurve` 2 x 3, `g1Gen` 1, `ptMadd` 2 x 7, `kcModR` 5) and 14880 (2 steps x 7440 keccak lane operations, 2 blocks). Not chosen: two spends (the validity part first); a charge of 714752 steps (the two `ptMulC` only). | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-38 "(a) Opaque def, never unfolded in the check": `opaque def NAME`, a domain-only modifier as `law` (a user program gets a refusal). The check keeps each call stuck, with open or closed arguments. Evaluation, the entry run and the lowering unfold the body; the run path drops the def values that the check made. The modifier applies to `itMsg` and `smMsg`. A law that needs the message content by computation will fail (the domain has none). Not chosen: unfold on closed arguments; open to user programs. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-39 "(a) natToFrC dropped": no `natToFrC`. This part of Q-S8b2-33 (a) is withdrawn: the model of Q-S8b2-35 has 0 `natToFr` references in the check of `s1Accept`. The guest `natToFr` of Q-S8b2-24 (a) stays the only form. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-40 "(a) Stuck head = VAL_STUCK + OP_OPAQUE": in the check, a reference to an opaque def gives a `VAL_STUCK` value with a new internal operation `OP_OPAQUE`; `inst` is the def index and the argument count is 0. There is no new value kind: `apply_value` and the 13 full `ValKind` switches do not change. The quote gives `CORE_GLOBAL` back, and the conversion compares by def index. Not chosen: a new value kind `VAL_GLOBAL`; `VAL_VAR` at a reserved level. | USER, S8b2 |
+| 2026-11-10 | Q-S8b2-41 "(a) Remove the 7 refl defs": a closed row that needs a Schnorr result has no refl def. The check keeps each `itMsg` and `smMsg` call stuck, also with closed arguments (Q-S8b2-38 (a)), thus `schnorrCheckC` is stuck in the check and such a row gives `PATH_END`. The 7 removed defs: `freshRefl`, `lowRefl`, `badCertRefl`, `poorRefl` and `spentAfterRefl` in `examples/spend.lang`; `certRow` and `dupRow` in `examples/params.lang`. The eval rows of `test/eval/expect.txt` carry each fact (`freshRow`, `lowRow`, `certFlag`, `dupFlag`, `badCertRow`, `poorRow`, `spentAfter`). Not chosen: (b) the check unfolds an opaque def on closed arguments (a kernel change; an estimate of 24M steps against the limit of 20M steps for `examples/spend.lang`, not measured). | USER, S8b2 |
+| 2026-11-11 | Q-S8b2-42 "(a) Full refresh (Recommended)": the gate table of `docs/host/README.md` was stale at the S8b2 close (8 counts, and 10 gate lines with no row). The close updates the 8 stale counts with their row texts and adds the 10 rows, each from the gate log and `test/gate.sh`. The table has 29 rows. Not chosen: (b) "Counts only" (the 8 counts; a section 13 open item for the 10 lines); (c) "No edit at S8b2" (one section 13 open item). | USER, S8b2 |
+| 2026-11-11 | Q-S8b2-43 "(a) Add the infinity row (Recommended)": the 7 `scTwin` rows of `schnorrCheckC` did not test R = the point at infinity and R = e P. One new `scTwin` row has R at infinity (`sc_inf_row` in `test/cryptotool.c`): s = e k mod r for key 3 on the Fill message, with e = the challenge of ((0, 0), P, m). `ptOnCurve` accepts (0, 0), and `schnorrCheck` and `schnorrCheckC` accept this input (measured at S8b2; the row pins only that the two results are equal). The crypto oracle has 506 rows. The header of `test/crypto/schnorr.lang` says why no row has R = e P: such an input needs a value e that is equal to keccak256(e P, P, m) mod r (a fixed point of the hash). Not chosen: (b) "Sentence and open item" (no row; a header sentence and a section 13 open item); (c) "No change". | USER, S8b2 |
 
 The seed is `bin/new-lang.sh barter-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -721,6 +767,85 @@ S8b2: the native field product, G1, Poseidon, keccak-256, Schnorr; in
 check keeps a stand-in until the S8c Noir verifier, and `badShare` comes
 with the S8c share check. (Recommended) (b) One commit with all of (a). RULED (a).
 
+### 1.12 Questions for the USER (S8b2)
+
+S8b2 is the crypto prelude part 1, second commit (section 12). Q-S8b-4,
+5, 6 and 8 rule the native field product, Poseidon, Schnorr and the cut.
+gavel-lang has no S8a commit, thus the sources are these rulings and
+quorum-lang 8d1a113 `src/crypto` (USER ruling at the S8b2 start). The
+step counts below are the gavel S8a measures; the evaluator kernel is
+the same.
+
+Q-S8b2-1 The run cost of the Schnorr check. With `feMulC` only, one
+check is 6.35M steps and 519 MiB. The arena is 1 GiB, thus one eval
+holds about two checks, and a certificate with two or more signatures
+does not fit. (a) A native G1 scalar product `ptMulC md k p`, as
+`feMulC`: C code in `eval.c` that does the guest `ptMul` field operation
+by field operation, a fixed charge, the guest `ptMul` stays the
+specification, oracle rows compare the two (k = 0, 1, a 16-bit k, a
+32-bit k, the point at infinity, a 254-bit k, 2^256 - 1), and the Wasm
+lowering calls the guest `ptMul`. One check is then 0.83M steps and 80
+MiB. (Recommended) (b) `feMulC` only: eval rows have at most one
+signature, and the Wasm rows carry the certificates. RULED (a).
+
+Q-S8b2-2 The owner check in `settle`. `sgVrf (itOwner i) (itSig i)` is
+the S6 stand-in of the proof check (Q-S6-6 (a)), with the reason
+`badProof`. When `Key` holds a `Pt1` and `Sig` holds (R, s), the id
+match of `sgVrf` has no ids. (a) The owner check becomes the Schnorr
+check of `itSig` by `itOwner` on the intent message (Q-S8b2-3), with
+the reason `badProof`. At S8c the Noir proof check comes after it, with
+the same reason. The laws `s1Accept`, `s1Unfilled` and `s1BadProof` keep
+their shape. (Recommended) (b) A stand-in with no cryptography: yes when
+the R point of the signature is the key point. S8c replaces it. RULED
+(a).
+
+Q-S8b2-3 The messages. `csHas` checks a signature with no message, thus
+a signature is not bound to its statement. A Schnorr check needs a
+message m : `Fr`. A message word (Q-S8b-5 (a)) is poseidon2(tag,
+poseidon2(x, y)); `natToFr` maps a `Nat` id or a unary value to `Fr`.
+(a) `smFill` gives the word with tag 0 on (nf, h); `smAmend` tag 1 on
+(root, h); `smWithdraw` tag 2 on (kh, poseidon2(tok, poseidon2(amt,
+h))), with kh = poseidon2(x mod r, y mod r) of the key point. The intent
+message has tag 3 on (nf, c), with c a poseidon2 chain of the public
+intent fields: the two tokens, the start amount, the window and the
+deadline. The S8c proof binds the sealed fields. `ctCheck` gives the
+message of its statement to `csHas`. A settle is then about 7M steps at
+t = 3. (Recommended) (b) As (a), but the intent message is the word
+with tag 3 on (nf, 0): the nullifier names the intent, and the S8c proof
+binds the other fields. Two poseidon2 in place of about eight. RULED
+(a).
+
+Q-S8b2-4 Keys and signatures in the examples and the rows. `key n` and
+`sig n` literals are in `examples/params.lang` (17), `examples/spend.lang`
+(11) and `test/eval/expect.txt` (6). (a) Fixtures in the domain file:
+`fxKey1` to `fxKeyN` (k G for k = 1 to N) and one signature for each
+signed message of the examples, printed by a `cryptotool fixtures` mode
+with a fixed nonce. A gate row checks that the domain text is equal to
+the print. All users change to the fixtures. (Recommended) (b) As (a),
+but the fixtures are in the example files and the eval rows, not in the
+domain file. RULED (a).
+
+Q-S8b2-5 `Hash` and the id types. (a) Add `family Hash := hash (hsVal :
+Fr)` for the message words. `Nullifier`, `Root` and `Commitment` keep
+their `Nat` ids until a slice needs a hash value (S8c). (Recommended) (b)
+The three types carry a `Hash` now, and all their literals change.
+RULED (a).
+
+Q-S8b2-6 The checks on the inputs of the Schnorr check. (a) The check
+says no when P or R is not on the curve, when P is the point at
+infinity, or when s is not below r. BN254 G1 has cofactor 1, thus the
+curve check is also the subgroup check. (Recommended) (b) No input
+checks: the fixtures are valid points. RULED (a).
+
+Q-S8b2-7 The place of the crypto block. `Key` and `Sig` (domain.lang
+487, 488) will need `Pt1` and `Fr`, and a def comes after the defs that
+it uses (rule R3). The S8b field section is at the end of the file
+(1040 to 1229). (a) Move the field section and the new crypto defs above
+`Token` (474). `sAnd`, `sOr` and `sNot` move up with them if the block
+uses them. (Recommended) (b) A second prelude file
+`domain/crypto.lang`, embedded before `domain.lang` by `gen/embed.c`.
+RULED (a).
+
 ## 2. The reading of R0: no runtime error
 
 R0 says that langc accepts no program that can lead to a runtime error.
@@ -937,6 +1062,25 @@ are `Fe` with the moduli `frMod` and `fpMod` of BN254. `feAdd`,
 native field product `feMulC`, G1, Poseidon, keccak-256 and the Schnorr
 check come with S8b2 (Q-S8b-8 (a)).
 
+S8b2 (2026-11-11) builds the second part. Four native operations are
+`VIS_WORD` builtins of `eval.c`: `feMulC` (Q-S8b-4 (a)), `ptMulC`
+(Q-S8b2-1 (a)), `poseidon2C` (Q-S8b2-29 (b)) and `schnorrCheckC`
+(Q-S8b2-33 (a), Q-S8b2-36 (a)). Each one has a fixed charge, and a
+guest def is its specification: `feMul`, `ptMul`, `poseidon2` and
+`schnorrCheck`. `langc ir` refuses `ptMulC`, `poseidon2C` and
+`schnorrCheckC` with `REFUSE_LOWER` (Q-S8b2-10 (a), Q-S8b2-30 (a),
+Q-S8b2-36 (a)). G1 is `Pt1`: an affine point, with (0, 0) as the point
+at infinity. keccak-256 has no native operation (Q-S8b2-12 (a));
+`kcChallenge` gives the challenge mod r (Q-S8b2-13 (a)). Poseidon is
+the circomlib form with t = 3 (Q-S8b-5 (a)). `Hash` holds an `Fr`
+(Q-S8b2-5 (a)). `Key` holds a `Pt1`, and `Sig` holds R and s
+(Q-S8b-6 (a)). `sgVrf` calls `schnorrCheckC`. `ctCheck` gives the
+message word of the statement to `csHas` (Q-S8b2-3 (a)), and the owner
+check of `settle` is the Schnorr check of `itSig` by `itOwner` on the
+intent message (Q-S8b2-2 (a)). The message words `smMsg` and `itMsg`
+are opaque defs (Q-S8b2-38 (a)). The 6 keys and the 13 signatures of
+the examples are fixtures in the domain file (Q-S8b2-4 (a)).
+
 S5 (2026-11-06) builds the base types of design sec 3 at the end of
 `domain/domain.lang` (Q-S5-4 (a)). `Amount` and `Height` are unary
 families (zero and successor). The words of `Amount` are `amLe`,
@@ -1041,12 +1185,14 @@ The laws are design sec 6. Buckets (Q-S0-31):
 | Bucket | Laws | Count |
 |---|---|---|
 | DISCHARGED (the checker proves it) | S1, S2, S3, S5, G1, G2, G3, N1 | 8 |
-| ASSUMED (a crypto assumption, stated) | G4 (signature unforgeability), Z1 (soundness of the Noir proofs, with the TFHE share proof; Q-S1-1 (a)), M1 (WRK security: malicious, up to n - 1 corrupt members, abort possible; Q-S0-16 (a)), M3 (the OS seed is uniform and fresh for each run; Q-S1-4 (a)) | 4 |
+| ASSUMED (a crypto assumption, stated) | G4 (signature unforgeability), Z1 (soundness of the Noir proofs, with the TFHE share proof; Q-S1-1 (a)), M1 (WRK security: malicious, up to n - 1 corrupt members, abort possible; Q-S0-16 (a)), M3 (the OS seed is uniform and fresh for each run; Q-S1-4 (a)), and the three prelude assumptions of Q-S8b-6 (a): Poseidon collision resistance, keccak-256 as a random oracle, and Schnorr EUF-CMA on BN254 G1 | 7 |
 | AT TARGET (the target shows it; differential tests) | S6 (`open` is a homomorphism at T3 and T4) | 1 |
 | EXTERNAL (outside langc) | S4 (privacy as indistinguishability), M2 (private, authenticated member links: the TLS proxy of each member; Q-S1-3 (a)) | 2 |
 
-Z1, M1, M2 and M3 come from the S1 rulings. They are obligations, not laws
-of design sec 6. Total: 15 rows.
+Z1, M1, M2 and M3 come from the S1 rulings. The three prelude
+assumptions come from Q-S8b-6 (a) and have no law id; G4 rests on the
+Schnorr assumption. These seven rows are obligations, not laws of design
+sec 6. Total: 18 rows.
 
 Proof notes. S2: the affine test is equal to the decay path at each height
 (Hedberg, then arithmetic). S5: both legs are in one log entry, so
@@ -1060,6 +1206,17 @@ rest of the chain) and `vdBad` (a check with the flag no gives `reject`
 with its reason). Each step is one `cong` on the flag path. The kernel
 unfolds the named tails of `settle`, thus a `trans` goes down the chain
 one check at a time.
+
+S8b2 (2026-11-10) adds `opaque def` (Q-S8b2-38 (a)), a second domain-only
+modifier. The check does not unfold an opaque def: each call stays stuck,
+with open or closed arguments. Two calls are equal when the def is the
+same and the arguments are equal. Evaluation, the entry run and the
+lowering unfold the body. A program that declares an opaque def gets
+`REFUSE_DATA`. `opaque law def` is not a form: `def` comes after `opaque`.
+The domain has two opaque defs, `itMsg` and `smMsg`. No law uses the
+content of a message word: each law uses the word as one value. A closed
+example row that needs a Schnorr result has no refl def (Q-S8b2-41 (a)):
+the eval rows of `test/eval/expect.txt` carry each such fact.
 
 | Law | Defs | Statement | Proof |
 |---|---|---|---|
@@ -1336,6 +1493,18 @@ gate; logs that are kept come from a serial run.
   `langc --kit ir test/crypto/crypto.lang` refuses with `EVAL_DEPTH` at
   `frInv` (the lowering nests deeper than 2000 levels), so the field
   file is outside the Wasm set.
+- Prelude rows (S8b2): `build/cryptotool` writes 506 rows: 360 on
+  `examples/crypto.lang`, 102 on `test/crypto/crypto.lang`, 10 on
+  `test/crypto/keccak.lang`, 15 on `test/crypto/poseidon.lang` and 19
+  on `test/crypto/schnorr.lang`. A twin row compares a native operation
+  with its guest def. One `schnorrCheckC` twin row has R = the point at
+  infinity (Q-S8b2-43 (a)): the native check and the guest check both
+  accept it. The gate rows `poseidon constants`, `poseidon2C table` and
+  `fixtures` compare a generator print with its text in the repository.
+  The gate row `ir refusals` (9 files) has `test/ir/ptmulc.lang`,
+  `p2c.lang` and `scc.lang` for the three native operations that
+  `langc ir` refuses. `docs/host/README.md` has one table row for each
+  gate line (Q-S8b2-42 (a)).
 - Word rows (S8b): 35 eval rows in `test/eval/expect.txt`;
   `test/check/word-type.lang` and `test/check/word-op.lang` give
   `REFUSE_WORD`; `test/parse/word-range.lang` gives `LEX_WORD_RANGE`.
@@ -1392,8 +1561,8 @@ gate; logs that are kept come from a serial run.
 | S7 | Governance: `Params` with the price list and its range (Q-S0-11 (b), Q-S1-6 (a)), `amend`, `replay`, `bad_price`, laws G1 to G3; the ledger and the certified `open` in `settle` (Q-S6-6 (a)), N1 in the replay form (Q-S6-4 (a)), OI-8 | DONE (2026-11-07) |
 | S8 | Refusal codes, `check --json`, `langc fmt` | DONE (2026-11-08) |
 | S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD` (Q-S8b-1 (a)), the family rename to `SwapWord` (Q-S8b-2 (a)), the BN254 field `Fr` and `Fp` (Q-S8b-3 (a)), the C oracle rows (Q-S1-5 (a), Q-S8b-7 (a)) | DONE (2026-11-08) |
-| S8b2 | The crypto prelude part 1, second commit (Q-S8b-8 (a)): the native field product `feMulC` (Q-S8b-4 (a)), BN254 G1, Poseidon (Q-S0-13 (a), Q-S8b-5 (a)), keccak-256, the Schnorr check (OI-17, Q-S8b-6 (a)) in `csHas` | NEXT |
-| S8c | The crypto prelude part 2 (Q-S1-1 (a)): the BN254 pairing and the Noir verifier (the T2 relations, the TFHE share proof); the run time (OI-15) | |
+| S8b2 | The crypto prelude part 1, second commit (Q-S8b-8 (a)): the native field product `feMulC` (Q-S8b-4 (a)), BN254 G1, Poseidon (Q-S0-13 (a), Q-S8b-5 (a)), keccak-256, the Schnorr check (OI-17, Q-S8b-6 (a)) in `csHas` | DONE (2026-11-11) |
+| S8c | The crypto prelude part 2 (Q-S1-1 (a)): the BN254 pairing and the Noir verifier (the T2 relations, the TFHE share proof); the run time (OI-15) | NEXT |
 | S8d | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-4 (a)), the MPC output check | |
 | S9 | T1 lowering to one Wasm module with the prelude | |
 | S10 | `barterd` replay mode: the C99 interpreter (Q-S0-19 (a)), the ledger replay, the price answer to `langc serve` (Q-S1-7 (a)); no crypto code (Q-S0-17 (b)) | |
@@ -1454,7 +1623,8 @@ and S14b. S9 needs S8b to S8d.
 - OI-17 The signature scheme of `Sig` and of the certificates is not
   ruled. gavel-lang uses Schnorr on BN254 G1 with a keccak-256 challenge
   (gavel d71bd96:66). It is a question at S8b. RULED by Q-S8b-6 (a):
-  Schnorr on BN254 G1 with a keccak-256 challenge, built at S8b2.
+  Schnorr on BN254 G1 with a keccak-256 challenge, built at S8b2. Closed
+  at S8b2 (2026-11-11): `csHas` and `settle` run the Schnorr check.
 - OI-18 A race: a 402 names the price at height h, and then an amendment
   changes the price from h + 1 before the payment comes. The price that
   the payment must meet is a question at S16.

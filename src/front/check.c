@@ -109,6 +109,10 @@ typedef enum {
   RULE_HCOMP,
   RULE_NAT2,
   RULE_WORD2, /* S8b: a Word op (Q-S8b-1 (a)) */
+  RULE_FE_MULC, /* S8b2: feMulC, the C Montgomery product (Q-S8b-4 (a)) */
+  RULE_PT_MULC, /* S8b2: ptMulC, the C G1 scalar product (Q-S8b2-1 (a)) */
+  RULE_POSEIDON2C, /* S8b2: poseidon2C, the C Poseidon hash (Q-S8b2-30 (a)) */
+  RULE_SCHNORRCHECKC, /* S8b2: schnorrCheckC, the C Schnorr check (Q-S8b2-36 (a)) */
   RULE_LEN, /* S3: len A r (survey section 7) */
   RULE_FLAG_IF,
   RULE_NONZERO,       /* S3: NonZero Nat */
@@ -215,6 +219,10 @@ static const Builtin BUILTINS[] = {
   {"wRotr", 2, RULE_WORD2, OP_W_ROTR, OP_WORD, 0, VIS_WORD},
   {"wLt", 2, RULE_WORD2, OP_W_LT, OP_SUM, 0, VIS_WORD},
   {"wEq", 2, RULE_WORD2, OP_W_EQ, OP_SUM, 0, VIS_WORD},
+  {"feMulC", 3, RULE_FE_MULC, OP_FE_MULC, OP_NAT, 0, VIS_WORD},
+  {"ptMulC", 3, RULE_PT_MULC, OP_PT_MULC, OP_NAT, 0, VIS_WORD},
+  {"poseidon2C", 2, RULE_POSEIDON2C, OP_POSEIDON2C, OP_NAT, 0, VIS_WORD},
+  {"schnorrCheckC", 4, RULE_SCHNORRCHECKC, OP_SCHNORRCHECKC, OP_NAT, 0, VIS_WORD},
 };
 
 #define BUILTIN_COUNT ((uint32_t)(sizeof BUILTINS / sizeof BUILTINS[0]))
@@ -2208,6 +2216,86 @@ static const Core *rule_len(Call *k) {
   return args[1] == NULL ? NULL : core_op(c, OP_FM_LEN, 0, 0, args, 2);
 }
 
+/* S8b2 (USER ruling Q-S8b-4 (a)): feMulC md a b, md : FeMod, a b : Fe, an
+   Fe. A C builtin of the Word set (VIS_WORD), thus the guest cannot call it.
+   The guest feMul is its specification. */
+static const Core *rule_fe_mulc(Call *k) {
+  Checker *c = k->c;
+  uint32_t fm = find_family(c->m, "FeMod");
+  uint32_t fe = find_family(c->m, "Fe");
+  const Core *args[3];
+  const Value *t;
+  if (fm >= c->m->family_count || fe >= c->m->family_count)
+    return NULL;
+  t = val_op(c->m, VAL_OP, OP_FAMILY, fe, 0, NULL, 0);
+  args[0] = check(c, k->args[0], val_op(c->m, VAL_OP, OP_FAMILY, fm, 0, NULL, 0));
+  args[1] = check(c, k->args[1], t);
+  args[2] = check(c, k->args[2], t);
+  k->type = t;
+  return args[0] == NULL || args[1] == NULL || args[2] == NULL ? NULL : core_op(c, OP_FE_MULC, 0, 0, args, 3);
+}
+
+/* S8b2 (USER ruling Q-S8b2-1 (a)): ptMulC md k p, md : FeMod, k : Fe, p :
+   Pt1, a Pt1. A C builtin of the Word set (VIS_WORD), thus the guest cannot
+   call it. The guest ptMul is its specification. */
+static const Core *rule_pt_mulc(Call *k) {
+  Checker *c = k->c;
+  uint32_t fm = find_family(c->m, "FeMod");
+  uint32_t fe = find_family(c->m, "Fe");
+  uint32_t pt = find_family(c->m, "Pt1");
+  const Core *args[3];
+  const Value *t;
+  if (fm >= c->m->family_count || fe >= c->m->family_count || pt >= c->m->family_count)
+    return NULL;
+  t = val_op(c->m, VAL_OP, OP_FAMILY, pt, 0, NULL, 0);
+  args[0] = check(c, k->args[0], val_op(c->m, VAL_OP, OP_FAMILY, fm, 0, NULL, 0));
+  args[1] = check(c, k->args[1], val_op(c->m, VAL_OP, OP_FAMILY, fe, 0, NULL, 0));
+  args[2] = check(c, k->args[2], t);
+  k->type = t;
+  return args[0] == NULL || args[1] == NULL || args[2] == NULL ? NULL : core_op(c, OP_PT_MULC, 0, 0, args, 3);
+}
+
+/* S8b2 (USER rulings Q-S8b2-29 (b), Q-S8b2-30 (a)): poseidon2C a b, a b :
+   Fe, an Fe. A C builtin of the Word set (VIS_WORD), thus the guest cannot
+   call it. The guest poseidon2 is its specification. */
+static const Core *rule_poseidon2c(Call *k) {
+  Checker *c = k->c;
+  uint32_t fe = find_family(c->m, "Fe");
+  const Core *args[2];
+  const Value *t;
+  if (fe >= c->m->family_count)
+    return NULL;
+  t = val_op(c->m, VAL_OP, OP_FAMILY, fe, 0, NULL, 0);
+  args[0] = check(c, k->args[0], t);
+  args[1] = check(c, k->args[1], t);
+  k->type = t;
+  return args[0] == NULL || args[1] == NULL ? NULL : core_op(c, OP_POSEIDON2C, 0, 0, args, 2);
+}
+
+/* S8b2 (USER ruling Q-S8b2-36 (a)): schnorrCheckC p r s m, p r : Pt1 and
+   s m : Fe of domain.lang. The result type is the type of a wLt result
+   (Sum Unit Unit), as the guest schnorrCheck. */
+static const Core *rule_schnorr_checkc(Call *k) {
+  Checker *c = k->c;
+  uint32_t fe = find_family(c->m, "Fe");
+  uint32_t pt = find_family(c->m, "Pt1");
+  const Core *args[4];
+  const Value *tf;
+  const Value *tp;
+  if (fe >= c->m->family_count || pt >= c->m->family_count)
+    return NULL;
+  tf = val_op(c->m, VAL_OP, OP_FAMILY, fe, 0, NULL, 0);
+  tp = val_op(c->m, VAL_OP, OP_FAMILY, pt, 0, NULL, 0);
+  args[0] = check(c, k->args[0], tp);
+  args[1] = check(c, k->args[1], tp);
+  args[2] = check(c, k->args[2], tf);
+  args[3] = check(c, k->args[3], tf);
+  k->type = prim_result(c, OP_SUM, tf);
+  return args[0] == NULL || args[1] == NULL || args[2] == NULL || args[3] == NULL
+             ? NULL
+             : core_op(c, OP_SCHNORRCHECKC, 0, 0, args, 4);
+}
+
 /* Fin n: n : Nat, Fin n : Type 0. */
 static const Core *rule_fin(Call *k) {
   const Core *n = check(k->c, k->args[0], nat_type(k->c));
@@ -2405,6 +2493,14 @@ static const Core *rule(Call *k) {
     return rule_unglue(k);
   case RULE_NAT2:
     return rule_prim(k, OP_NAT);
+  case RULE_FE_MULC:
+    return rule_fe_mulc(k);
+  case RULE_PT_MULC:
+    return rule_pt_mulc(k);
+  case RULE_POSEIDON2C:
+    return rule_poseidon2c(k);
+  case RULE_SCHNORRCHECKC:
+    return rule_schnorr_checkc(k);
   case RULE_WORD2:
     return rule_prim(k, OP_WORD);
   case RULE_LEN:
@@ -4867,6 +4963,7 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
   info->type = tv;
   info->value = NULL;
   info->law_only = law;
+  info->opaque = d->is_opaque;
   m->def_count++;
   return 1;
 }
@@ -5321,6 +5418,8 @@ static int check_decl(Checker *c, const Decl *d) {
     return FAILK(c, "REFUSE_BASE", "REFUSE_DATA", "a program cannot declare a cofamily (rule R1); only domain/domain.lang can");
   if (d->is_law && d->origin == ORIGIN_PROGRAM)
     return FAIL(c, "REFUSE_DATA", "a program cannot declare a law def (rule O7); only domain/domain.lang can");
+  if (d->is_opaque && d->origin == ORIGIN_PROGRAM)
+    return FAIL(c, "REFUSE_DATA", "a program cannot declare an opaque def (Q-S8b2-38 (a)); only domain/domain.lang can");
   if (d->kind == DECL_AXIOM)
     return FAIL(c, "REFUSE_AXIOM", "an axiom has no proof (rule R2)");
   if (d->is_rec)
@@ -5370,6 +5469,7 @@ static int check_decls(Arena *arena, const DeclList *decls, Machine *m, Diag *di
   c.m = m;
   c.decls = decls;
   c.mode = mode;
+  m->opaque_stuck = 1; /* S8b2 (Q-S8b2-38 (a)): the check keeps each opaque def stuck */
   for (i = 0; i < decls->count; i++) {
     *stop = i;
     checker_reset(&c, i, decls->items[i].name);
@@ -5379,6 +5479,7 @@ static int check_decls(Arena *arena, const DeclList *decls, Machine *m, Diag *di
     i += decls->items[i].kind == DECL_FAMILY && decls->items[i].block_count > 1u ? decls->items[i].block_count - 1u : 0u;
   }
   m->def = NULL;
+  opaque_run_mode(m); /* S8b2 (Q-S8b2-38 (a)): the run path unfolds each opaque def */
   return 1;
 }
 

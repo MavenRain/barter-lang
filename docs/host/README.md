@@ -174,21 +174,31 @@ how to replace the sample domain.
 
 | Line | What the gate does |
 |---|---|
-| `examples: 30 checked, 0 failed` | `langc check` accepts each `examples/*.lang` file |
-| `parse refusals: 17 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
-| `check refusals: 158 checked` | each `test/check` file fails with the code in `test/check/expect.txt`; the `PATH_END` message shows both normal forms |
+| `examples: 37 checked, 0 failed` | `langc check` accepts each `examples/*.lang` file (`--kit` for each file of `examples/kit.txt`) |
+| `parse refusals: 19 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
+| `check refusals: 205 checked` | each `test/check` file fails with the code in `test/check/expect.txt`; the `PATH_END` message shows both normal forms |
 | `kit-only refusals: 10 checked` | each `REFUSE_KIT` row refuses a kit item in guest mode only: `langc --kit check` accepts the file |
 | `time hint: 1 checked` | a `REFUSE_TIME` refusal names the op-count form (`len r`, an `OpPos`) |
-| `evals: 79 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
+| `kernel suffix: 1 checked` | the text line of a mapped code ends with the kernel code: `test/check/read-amount.lang` gives `REFUSE_DIV` and `(kernel REFUSE_READ)` |
+| `json refusals: 224 checked` | `langc check --json` exits 1 for each row of `test/parse/expect.txt` and `test/check/expect.txt`: the code and a hint are on stdout, and stderr is empty |
+| `json lines: 5 checked` | for each line of `test/json/expect.txt`, `langc check --json` gives the exit code of the line and the stdout of its `test/json` file; `check --json` with no file and with a file that does not exist exits 2 with no JSON |
+| `fmt idempotent: 38 checked` | for `domain/domain.lang` and each example, the `fmt` text is canonical: `fmt` of that text gives the same text, and `fmt --check` exits 0 with no output |
+| `fmt not canonical: 1 checked` | `fmt --check` refuses `test/fmt/check.lang` at line 3 |
+| `fmt usage: 1 checked` | an unknown `fmt` argument is a usage error (exit 2) |
+| `evals: 181 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
+| `crypto oracle: 506 rows, 0 mismatches` | `build/cryptotool` (`test/cryptotool.c`) prints one row for each oracle value: a kit file, a def, its arguments and the result. `langc --kit eval` gives the result of each row |
+| `poseidon constants: 76 lines, same as domain/domain.lang` | the print of `build/poseidongen` is the lines of `domain/domain.lang` from `def psM00` to the last line of `psAll` |
+| `poseidon2C table: 228 lines, same as src/front/poseidon_c.h` | the print of `build/poseidongen c` is `src/front/poseidon_c.h` |
+| `fixtures: 40 lines, same as domain/domain.lang` | the print of `build/cryptotool fixtures` is the lines of `domain/domain.lang` from `-- @FIX@ begin` to `-- @FIX@ end` |
 | `builds: 1 checked` | `langc --kit build examples/functions.lang -o OUT` writes a module that `wasm-validate` accepts |
-| `ir: 1 lowered` | `langc --kit ir examples/functions.lang` gives one `func` line for each `abi` line |
-| `ir refusals: 5 checked` | `langc --kit ir` refuses `test/ir/closure.lang`, `kmap.lang`, `tree.lang`, `spine.lang` and `hop.lang`, each with its code |
+| `ir: 37 lowered` | `langc ir` lowers each `examples/*.lang` file (`--kit` for each file of `examples/kit.txt`) and gives one `func` line for each `abi` line; `examples/functions.lang` has at least one entry |
+| `ir refusals: 9 checked` | `langc --kit check` accepts and `langc --kit ir` refuses `test/ir/closure.lang`, `kmap.lang`, `tree.lang`, `spine.lang`, `lazy.lang`, `hop.lang`, `ptmulc.lang`, `p2c.lang` and `scc.lang`, each with its code |
 | `ir lowerings: 2 lowered` | the `langc --kit ir` text of `test/ir/natops.lang` and `test/ir/block.lang` is `test/ir/natops.ir` and `test/ir/block.ir` |
 | `notrap modules: 4 checked` | `langc build` writes the modules of `test/ir/natops.lang`, `test/ir/block.lang` and `examples/state-no-history.lang`, and `wasm-validate` accepts each one. `build/notraptool` (`test/notraptool.c`) accepts these three modules and the module of `examples/functions.lang`: no `unreachable`, no `memory.grow`, only the opcodes of `src/wasmop.h`, a divisor guard before each `i64.div_u` and `i64.rem_u`, and memory 0 with maximum = minimum. `build` lowers the `state` family of `examples/state-no-history.lang` as a plain family |
 | `notrap bad rows: 7 checked` | `build/notraptool` refuses each module of `test/notrap/bad/` (`wat2wasm` makes it from its `.wat` file): exit 1 and the message of its line in `test/notrap/bad/expect.txt`. The 7 modules have `unreachable`, `memory.grow`, an `i64.div_u` and an `i64.rem_u` with no guard, a memory maximum above the minimum, a memory with no maximum, and `i32.add` (an opcode that is not in `src/wasmop.h`) |
 | `spine evals: 10 checked` | `langc --kit eval` gives each eval of `test/ir/spine.lang` at 4 |
-| `wasm: 33 modules valid` | all examples, `test/ir/natops.lang`, `test/ir/block.lang` and `test/ir/proof-trap.lang` pass validation and `build/notraptool` |
-| `differential: 998 cases, 0 mismatches` | node and `langc eval` agree on every grid case; a `trap` fails |
+| `wasm: 40 modules valid` | all examples, `test/ir/natops.lang`, `test/ir/block.lang` and `test/ir/proof-trap.lang` pass validation and `build/notraptool` |
+| `differential: 1846 cases, 0 mismatches` | node and `langc eval` agree on every grid case; a `trap` fails |
 | `gate: 0 failures` | the sum of all failures of `test/gate.sh` |
 | `review regressions: passed` | `test/review.sh` passes |
 | `domain regressions: passed` | `build/fronttool` (the domain declaration rows) passes |

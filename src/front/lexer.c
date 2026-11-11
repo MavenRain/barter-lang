@@ -35,6 +35,7 @@ static const struct {
   {"cofamily", TOK_KW_COFAMILY},
   {"sealed", TOK_KW_SEALED},
   {"law", TOK_KW_LAW},
+  {"opaque", TOK_KW_OPAQUE},
 };
 
 const char *tok_kind_name(TokKind kind) {
@@ -70,6 +71,7 @@ const char *tok_kind_name(TokKind kind) {
     case TOK_KW_COFAMILY: return "'cofamily'";
     case TOK_KW_SEALED: return "'sealed'";
     case TOK_KW_LAW: return "'law'";
+    case TOK_KW_OPAQUE: return "'opaque'";
   }
   return "a token";
 }

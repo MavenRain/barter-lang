@@ -83,6 +83,7 @@ typedef struct {
   int is_state; /* the state form, a family with the keyword state (slice K3a) */
   int is_sealed; /* `sealed family` (S5): guest elim and fold are law-only */
   int is_law;    /* `law def` (S5): the def is law-only (rule O7) */
+  int is_opaque; /* `opaque def` (S8b2, Q-S8b2-38 (a)): the check does not unfold the def */
   int line;
   int col;
   int end_line; /* the line of the last token of the decl (S8 fmt) */

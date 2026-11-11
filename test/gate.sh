@@ -211,6 +211,43 @@ while IFS= read -r line; do
 done <"$tmp/crypto.txt"
 echo "crypto oracle: $crypto rows, $cryptobad mismatches"
 
+# The Poseidon constants (S8b2, Q-S8b-5 (a), Q-S8b2-17 (a)): the print of
+# build/poseidongen must be the lines of domain/domain.lang from `def psM00`
+# to the last line of psAll.
+status=0
+build/poseidongen >"$tmp/ps-gen.txt" 2>"$tmp/err" || status=$?
+awk '/^def psM00 :/{on=1} on{print} on && /^  prEnd/{exit}' domain/domain.lang >"$tmp/ps-dom.txt"
+if [ "$status" -eq 0 ] && [ -s "$tmp/ps-gen.txt" ] && cmp -s "$tmp/ps-gen.txt" "$tmp/ps-dom.txt"; then
+  echo "poseidon constants: $(wc -l <"$tmp/ps-gen.txt" | tr -d ' ') lines, same as domain/domain.lang"
+else
+  echo "FAIL poseidon constants: build/poseidongen exit $status, the print is not the domain text"
+  fail=$((fail + 1))
+fi
+
+# The poseidon2C table (S8b2, Q-S8b2-30 (a)): the print of
+# `build/poseidongen c` must be src/front/poseidon_c.h.
+status=0
+build/poseidongen c >"$tmp/ps-c.txt" 2>"$tmp/err" || status=$?
+if [ "$status" -eq 0 ] && [ -s "$tmp/ps-c.txt" ] && cmp -s "$tmp/ps-c.txt" src/front/poseidon_c.h; then
+  echo "poseidon2C table: $(wc -l <"$tmp/ps-c.txt" | tr -d ' ') lines, same as src/front/poseidon_c.h"
+else
+  echo "FAIL poseidon2C table: build/poseidongen c exit $status, the print is not src/front/poseidon_c.h"
+  fail=$((fail + 1))
+fi
+
+# The Schnorr fixtures (S8b2, Q-S8b2-4 (a)): the print of `build/cryptotool
+# fixtures` must be the lines of domain/domain.lang from `-- @FIX@ begin` to
+# `-- @FIX@ end`.
+status=0
+build/cryptotool fixtures >"$tmp/fx-gen.txt" 2>"$tmp/err" || status=$?
+awk '/^-- @FIX@ begin/,/^-- @FIX@ end/' domain/domain.lang >"$tmp/fx-dom.txt"
+if [ "$status" -eq 0 ] && [ -s "$tmp/fx-gen.txt" ] && cmp -s "$tmp/fx-gen.txt" "$tmp/fx-dom.txt"; then
+  echo "fixtures: $(wc -l <"$tmp/fx-gen.txt" | tr -d ' ') lines, same as domain/domain.lang"
+else
+  echo "FAIL fixtures: build/cryptotool fixtures exit $status, the print is not the domain text"
+  fail=$((fail + 1))
+fi
+
 # eval_refused STATUS CODE NAME [ARGS]: `langc --kit eval examples/entries.lang
 # NAME ARGS` must exit STATUS and print `langc: CODE: NAME: ...` on stderr.
 eval_refused() {
@@ -267,6 +304,12 @@ echo "ir: $irs lowered"
 # tree.lang folds a tree that exists only at run time (REFUSE_RUNTIME_TREE).
 # spine.lang walks lists that exist only at run time, so its heap use has no
 # static bound (S3).
+# ptmulc.lang uses ptMulC on a run-time scalar: the Wasm host refuses it
+# (HOST-LIMIT, S8b2, USER ruling Q-S8b2-10 (a)).
+# p2c.lang uses poseidon2C on run-time values: the Wasm host refuses it
+# (HOST-LIMIT, S8b2, USER ruling Q-S8b2-30 (a)).
+# scc.lang uses schnorrCheckC on run-time values: the Wasm host refuses it
+# (HOST-LIMIT, S8b2, USER ruling Q-S8b2-36 (a)).
 irrefusals=0
 ir_refused() {
   status=0
@@ -286,6 +329,9 @@ ir_refused tree.lang "REFUSE_RUNTIME_TREE: tips: "
 ir_refused spine.lang "REFUSE_LOWER: trapHead: heap use has no static bound"
 ir_refused lazy.lang "REFUSE_LOWER: lazy: heap use has no static bound"
 ir_refused hop.lang "REFUSE_LOWER: hopDepth: a recursive fold over a block of families"
+ir_refused ptmulc.lang "REFUSE_LOWER: irX: the Wasm host does not lower ptMulC (HOST-LIMIT)"
+ir_refused p2c.lang "REFUSE_LOWER: irX: the Wasm host does not lower poseidon2C (HOST-LIMIT)"
+ir_refused scc.lang "REFUSE_LOWER: irX: the Wasm host does not lower schnorrCheckC (HOST-LIMIT)"
 echo "ir refusals: $irrefusals checked"
 
 # The IR lowerings (S3): `langc

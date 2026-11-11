@@ -1,6 +1,7 @@
 /* The evaluator, the conversion test, quote and the printer (see
    front/core.h). SHARED by the tcc kits. */
 #include "front/core.h"
+#include "front/poseidon_c.h"
 
 #include <string.h>
 
@@ -32,7 +33,7 @@ static const char *const OP_NAMES[] = {
   [OP_NONZERO] = "NonZero", [OP_NONZERO_OF] = "nonZero", [OP_NONZERO_VALUE] = "nonZeroValue",
   [OP_WORD] = "Word",
   [OP_W_ADD] = "wAdd", [OP_W_SUB] = "wSub", [OP_W_MUL] = "wMul", [OP_W_MULHI] = "wMulHi", [OP_W_AND] = "wAnd", [OP_W_OR] = "wOr", [OP_W_XOR] = "wXor",
-  [OP_W_NOT] = "wNot", [OP_W_SHL] = "wShl", [OP_W_SHR] = "wShr", [OP_W_ROTL] = "wRotl", [OP_W_ROTR] = "wRotr", [OP_W_LT] = "wLt", [OP_W_EQ] = "wEq"
+  [OP_W_NOT] = "wNot", [OP_W_SHL] = "wShl", [OP_W_SHR] = "wShr", [OP_W_ROTL] = "wRotl", [OP_W_ROTR] = "wRotr", [OP_W_LT] = "wLt", [OP_W_EQ] = "wEq", [OP_FE_MULC] = "feMulC", [OP_PT_MULC] = "ptMulC", [OP_POSEIDON2C] = "poseidon2C", [OP_SCHNORRCHECKC] = "schnorrCheckC", [OP_OPAQUE] = "opaque"
 };
 
 /* The number of arguments of each operation. VARIES: it comes from the
@@ -50,7 +51,7 @@ static const unsigned char OP_ARITY[] = {
   [OP_NAT_EQ] = 2, [OP_NAT_LE] = 2, [OP_FLAG_IF] = 3,
   [OP_NAT_DIV] = 2, [OP_NAT_MOD] = 2, [OP_FM_LEN] = 2,
   [OP_WORD] = 0, [OP_W_ADD] = 2, [OP_W_SUB] = 2, [OP_W_MUL] = 2, [OP_W_MULHI] = 2, [OP_W_AND] = 2, [OP_W_OR] = 2, [OP_W_XOR] = 2,
-  [OP_W_NOT] = 1, [OP_W_SHL] = 2, [OP_W_SHR] = 2, [OP_W_ROTL] = 2, [OP_W_ROTR] = 2, [OP_W_LT] = 2, [OP_W_EQ] = 2,
+  [OP_W_NOT] = 1, [OP_W_SHL] = 2, [OP_W_SHR] = 2, [OP_W_ROTL] = 2, [OP_W_ROTR] = 2, [OP_W_LT] = 2, [OP_W_EQ] = 2, [OP_FE_MULC] = 3, [OP_PT_MULC] = 3, [OP_POSEIDON2C] = 2, [OP_SCHNORRCHECKC] = 4, [OP_OPAQUE] = 0,
   [OP_PROJ] = 1, [OP_KMAP] = 2, [OP_KMAP_OF] = VARIES, [OP_KMAP_GET] = 3, [OP_KMAP_SET] = 4,
   [OP_INTERVAL] = 0, [OP_TRANSP] = 3,
   [OP_SYSTEM] = VARIES, [OP_HCOMP] = 4, [OP_FIN] = 1, [OP_FIN_ADD] = 3,
@@ -513,6 +514,24 @@ const Value *def_value(Machine *m, uint32_t index) {
   if (d->value == NULL)
     d->value = eval_core(m, NULL, d->body);
   return d->value;
+}
+
+/* S8b2 (Q-S8b2-40 (a)): in the check, a reference to an opaque def gives
+   this stuck head (inst = the def index). quote gives CORE_GLOBAL back. */
+static const Value *opaque_head(Machine *m, uint32_t index) {
+  const Value *none = NULL;
+  return val_op(m, VAL_STUCK, OP_OPAQUE, index, 0, &none, 0);
+}
+
+/* S8b2 (Q-S8b2-38 (a)): the end of the check. The run path unfolds each
+   opaque def, thus each def value that the check made is dropped. */
+void opaque_run_mode(Machine *m) {
+  uint32_t i;
+  if (!m->opaque_stuck)
+    return;
+  m->opaque_stuck = 0;
+  for (i = 0; i < m->def_count; i++)
+    m->defs[i].value = NULL;
 }
 
 static Scrut scrut_of(const Value *v) {
@@ -1491,6 +1510,743 @@ static const Value *word_test(Machine *m, Op op, const Value *const *a, uint32_t
   return make(m, VAL_OP, f(x, y) != 0u ? OP_INR : OP_INL, 0, 1, constant(m, OP_UNIT_VAL), NULL, NULL);
 }
 
+/* S8b2 (USER ruling Q-S8b-4 (a)): feMulC md a b in C, the Montgomery product
+   a b R^-1 mod m. The guest feMul (domain.lang) is the specification: the C
+   does its steps (feMac, feRound, feReduce, feCondSub) on the same Words,
+   also for inputs that are not canonical. The charge is fixed: 64 steps. */
+
+/* The low Word of t + a b + c, and the high Word in *HI (the guest feMac).
+   The total is at most 2^64 - 1. */
+static uint32_t fe_mac(uint32_t t, uint32_t a, uint32_t b, uint32_t c, uint32_t *hi) {
+  uint64_t s = (uint64_t)a * (uint64_t)b + (uint64_t)t + (uint64_t)c;
+  *hi = (uint32_t)(s >> 32);
+  return (uint32_t)s;
+}
+
+/* One CIOS round (the guest feRound, then feReduce): T := (T + X W + Q M) /
+   2^32, with Q = u0 n0'. The top Word wraps as wAdd does. */
+static void fe_round(const uint32_t *md, uint32_t n0, const uint32_t *x, uint32_t w, uint32_t *t) {
+  uint32_t u[8];
+  uint32_t c = 0;
+  uint32_t hi;
+  uint32_t q;
+  uint32_t r;
+  uint32_t i;
+  for (i = 0; i < 8u; i++)
+    u[i] = fe_mac(t[i], x[i], w, c, &c);
+  hi = c;
+  q = u[0] * n0;
+  c = 0;
+  for (i = 0; i < 8u; i++) {
+    r = fe_mac(u[i], q, md[i], c, &c);
+    if (i > 0u)
+      t[i - 1u] = r;
+  }
+  t[7] = hi + c;
+}
+
+/* 1 when X < Y, the top Word first (the guest feLt). */
+static int fe_less(const uint32_t *x, const uint32_t *y) {
+  uint32_t i;
+  for (i = 8u; i > 0u; i--)
+    if (x[i - 1u] != y[i - 1u])
+      return x[i - 1u] < y[i - 1u];
+  return 0;
+}
+
+/* T := T - M mod 2^256 when T is at least M (the guest feCondSub and
+   feSubRaw, a feSbb chain). */
+static void fe_cond_sub(const uint32_t *md, uint32_t *t) {
+  uint32_t c = 0;
+  uint32_t d;
+  uint32_t nb;
+  uint32_t i;
+  if (fe_less(t, md))
+    return;
+  for (i = 0; i < 8u; i++) {
+    d = t[i] - md[i];
+    nb = (uint32_t)(t[i] < md[i]) | (uint32_t)(d < c);
+    t[i] = d - c;
+    c = nb;
+  }
+}
+
+/* The 8 Words of the Fe value X in W. 0 when X or a Word of X is stuck (*OUT
+   is then the stuck operation), or when X is not an Fe. */
+static int fe_words(Machine *m, Op op, const Value *x, const Value *const *a, uint32_t n, uint32_t *w, const Value **out) {
+  uint32_t i;
+  if (blocked(m, x, op, 0, 0, a, n, out))
+    return 0;
+  if (!val_is(x, OP_CTOR) || x->argc != 8u) {
+    *out = internal(m, "a field builtin on a value that is not an Fe");
+    return 0;
+  }
+  for (i = 0; i < 8u; i++) {
+    if (blocked(m, x->args[i], op, 0, 0, a, n, out))
+      return 0;
+    if (x->args[i]->kind != VAL_WORD) {
+      *out = internal(m, "a field builtin on an Fe with a limb that is not a Word");
+      return 0;
+    }
+    w[i] = (uint32_t)x->args[i]->nat;
+  }
+  return 1;
+}
+
+static const Value *fe_mulc(Machine *m, Op op, const Value *const *a, uint32_t n) {
+  const Value *out = NULL;
+  const Value *limbs[8];
+  uint32_t md[8];
+  uint32_t x[8];
+  uint32_t y[8];
+  uint32_t t[8] = {0};
+  uint32_t i;
+  if (blocked(m, a[0], op, 0, 0, a, n, &out))
+    return out;
+  if (!val_is(a[0], OP_CTOR) || a[0]->argc != 5u)
+    return internal(m, "a feMulC on a modulus that is not a FeMod");
+  if (!fe_words(m, op, a[0]->args[0], a, n, md, &out) || !fe_words(m, op, a[1], a, n, x, &out) || !fe_words(m, op, a[2], a, n, y, &out))
+    return out;
+  if (blocked(m, a[0]->args[1], op, 0, 0, a, n, &out))
+    return out;
+  if (a[0]->args[1]->kind != VAL_WORD)
+    return internal(m, "a feMulC on a FeMod with an n0' that is not a Word");
+  if (!spend(m, 64u))
+    return NULL;
+  for (i = 0; i < 8u; i++)
+    fe_round(md, (uint32_t)a[0]->args[1]->nat, x, y[i], t);
+  fe_cond_sub(md, t);
+  for (i = 0; i < 8u; i++)
+    limbs[i] = val_word(m, t[i]);
+  return val_op(m, VAL_OP, OP_CTOR, a[1]->inst, a[1]->field, limbs, 8u);
+}
+
+/* S8b2 (USER ruling Q-S8b2-1 (a)): the field ops of the guest (domain.lang)
+   on 8 Words, for ptMulC. Each does the steps of the guest def, with the
+   arguments in the same order. An output may be an input. */
+
+static void fe_copy(const uint32_t *x, uint32_t *r) {
+  uint32_t i;
+  for (i = 0; i < 8u; i++)
+    r[i] = x[i];
+}
+
+static void fe_set_zero(uint32_t *r) {
+  uint32_t i;
+  for (i = 0; i < 8u; i++)
+    r[i] = 0u;
+}
+
+/* 1 when each Word of X is 0 (the guest feIsZero). */
+static int fe_zero(const uint32_t *x) {
+  uint32_t i;
+  for (i = 0; i < 8u; i++)
+    if (x[i] != 0u)
+      return 0;
+  return 1;
+}
+
+/* R := X + Y mod 2^256, a feAdc chain (the guest feAddRaw). */
+static void fe_add_raw(const uint32_t *x, const uint32_t *y, uint32_t *r) {
+  uint64_t s;
+  uint32_t c = 0;
+  uint32_t i;
+  for (i = 0; i < 8u; i++) {
+    s = (uint64_t)x[i] + (uint64_t)y[i] + (uint64_t)c;
+    r[i] = (uint32_t)s;
+    c = (uint32_t)(s >> 32);
+  }
+}
+
+/* R := X - Y mod 2^256, a feSbb chain (the guest feSubRaw). */
+static void fe_sub_raw(const uint32_t *x, const uint32_t *y, uint32_t *r) {
+  uint32_t c = 0;
+  uint32_t d;
+  uint32_t nb;
+  uint32_t i;
+  for (i = 0; i < 8u; i++) {
+    d = x[i] - y[i];
+    nb = (uint32_t)(x[i] < y[i]) | (uint32_t)(d < c);
+    r[i] = d - c;
+    c = nb;
+  }
+}
+
+/* The guest feAdd: feCondSub of feAddRaw. */
+static void fe_add(const uint32_t *md, const uint32_t *x, const uint32_t *y, uint32_t *r) {
+  fe_add_raw(x, y, r);
+  fe_cond_sub(md, r);
+}
+
+/* The guest feSub: feSubRaw, and then + M when X < Y. */
+static void fe_sub(const uint32_t *md, const uint32_t *x, const uint32_t *y, uint32_t *r) {
+  int lt = fe_less(x, y);
+  fe_sub_raw(x, y, r);
+  if (lt)
+    fe_add_raw(r, md, r);
+}
+
+/* The guest feMul: 8 CIOS rounds over the Words of Y, then feCondSub. */
+static void fe_mul(const uint32_t *md, uint32_t n0, const uint32_t *x, const uint32_t *y, uint32_t *r) {
+  uint32_t t[8] = {0};
+  uint32_t i;
+  for (i = 0; i < 8u; i++)
+    fe_round(md, n0, x, y[i], t);
+  fe_cond_sub(md, t);
+  fe_copy(t, r);
+}
+
+/* 0 for fbEnd, 1 for fbZero, 2 for fbOne (the feInv products of the node),
+   -1 for any other value. */
+static int fe_bit(const Machine *m, const Value *v) {
+  const char *s;
+  if (!val_is(v, OP_CTOR) || v->inst >= m->ctor_count)
+    return -1;
+  s = m->ctors[v->inst].name;
+  if (s == NULL)
+    return -1;
+  if (v->argc == 0u && strcmp(s, "fbEnd") == 0)
+    return 0;
+  if (v->argc == 1u && strcmp(s, "fbZero") == 0)
+    return 1;
+  if (v->argc == 1u && strcmp(s, "fbOne") == 0)
+    return 2;
+  return -1;
+}
+
+/* The feInv products of the FeBits chain E in *COUNT. 0 when a node is
+   stuck (*OUT is then the stuck operation) or is not fbEnd, fbZero or fbOne
+   (*OUT is then an internal error). */
+static int fe_bits_count(Machine *m, Op op, const Value *e, const Value *const *a, uint32_t n, uint64_t *count, const Value **out) {
+  int bit;
+  *count = 0;
+  while (!blocked(m, e, op, 0, 0, a, n, out)) {
+    bit = fe_bit(m, e);
+    if (bit == 0)
+      return 1;
+    if (bit < 0) {
+      *out = internal(m, "a ptMulC on a modE node that is not fbEnd, fbZero or fbOne");
+      return 0;
+    }
+    *count += (uint64_t)bit;
+    e = e->args[0];
+  }
+  return 0;
+}
+
+/* The guest feInv md a = fePowFrom md a (modE md) (modR1 md): for each node
+   of the chain E (fe_bits_count checked it), the top bit first, square, and
+   for fbOne then multiply by A. */
+static void fe_inv(const Machine *m, const uint32_t *md, uint32_t n0, const uint32_t *r1, const Value *e, const uint32_t *a, uint32_t *r) {
+  uint32_t x[8];
+  int bit = fe_bit(m, e);
+  fe_copy(r1, x);
+  while (bit == 1 || bit == 2) {
+    fe_mul(md, n0, x, x, x);
+    if (bit == 2)
+      fe_mul(md, n0, x, a, x);
+    e = e->args[0];
+    bit = fe_bit(m, e);
+  }
+  fe_copy(x, r);
+}
+
+/* A Jac1 value on Words (the guest jac1 X Y Z). Z = 0 is the point at
+   infinity. */
+typedef struct {
+  uint32_t x[8];
+  uint32_t y[8];
+  uint32_t z[8];
+} PtJac;
+
+/* The guest jcInf. */
+static void pt_inf(PtJac *a) {
+  fe_set_zero(a->x);
+  fe_set_zero(a->y);
+  fe_set_zero(a->z);
+}
+
+/* The guest ptDbl: A := 2 A, jcInf when Z = 0 or Y = 0. 7 feMul, 8 feAdd,
+   4 feSub. */
+static void pt_dbl(const uint32_t *md, uint32_t n0, PtJac *a) {
+  uint32_t yy[8];
+  uint32_t s[8];
+  uint32_t mm[8];
+  uint32_t x3[8];
+  uint32_t y8[8];
+  uint32_t z3[8];
+  uint32_t t[8];
+  if (fe_zero(a->z) || fe_zero(a->y)) {
+    pt_inf(a);
+    return;
+  }
+  fe_mul(md, n0, a->y, a->y, yy);
+  fe_mul(md, n0, a->x, yy, s);
+  fe_add(md, s, s, s);
+  fe_add(md, s, s, s);
+  fe_mul(md, n0, a->x, a->x, t);
+  fe_add(md, t, t, mm);
+  fe_add(md, mm, t, mm);
+  fe_mul(md, n0, mm, mm, x3);
+  fe_sub(md, x3, s, x3);
+  fe_sub(md, x3, s, x3);
+  fe_mul(md, n0, yy, yy, y8);
+  fe_add(md, y8, y8, y8);
+  fe_add(md, y8, y8, y8);
+  fe_mul(md, n0, a->y, a->z, z3);
+  fe_sub(md, s, x3, t);
+  fe_mul(md, n0, mm, t, t);
+  fe_add(md, y8, y8, y8);
+  fe_sub(md, t, y8, a->y);
+  fe_add(md, z3, z3, a->z);
+  fe_copy(x3, a->x);
+}
+
+/* The guest ptMaddGen: the general case of ptMadd (H and R = S - Y here S,
+   both not 0). 7 feMul, 5 feSub. */
+static void pt_madd_gen(const uint32_t *md, uint32_t n0, PtJac *a, const uint32_t *h, const uint32_t *s) {
+  uint32_t hh[8];
+  uint32_t hhh[8];
+  uint32_t v[8];
+  uint32_t x3[8];
+  uint32_t t[8];
+  uint32_t u[8];
+  fe_mul(md, n0, h, h, hh);
+  fe_mul(md, n0, h, hh, hhh);
+  fe_mul(md, n0, a->x, hh, v);
+  fe_mul(md, n0, s, s, x3);
+  fe_sub(md, x3, hhh, x3);
+  fe_sub(md, x3, v, x3);
+  fe_sub(md, x3, v, x3);
+  fe_sub(md, v, x3, t);
+  fe_mul(md, n0, s, t, t);
+  fe_mul(md, n0, a->y, hhh, u);
+  fe_sub(md, t, u, a->y);
+  fe_mul(md, n0, a->z, h, a->z);
+  fe_copy(x3, a->x);
+}
+
+/* The guest ptMadd: A := A + (BX, BY) for an affine point. A when (BX, BY)
+   is (0, 0); (BX, BY, R1) when Z = 0; when H = 0, ptDbl for S = 0, else
+   jcInf. 4 feMul, 2 feSub before ptMaddGen. */
+static void pt_madd(const uint32_t *md, uint32_t n0, const uint32_t *r1, PtJac *a, const uint32_t *bx, const uint32_t *by) {
+  uint32_t zz[8];
+  uint32_t h[8];
+  uint32_t s[8];
+  uint32_t t[8];
+  if (fe_zero(bx) && fe_zero(by))
+    return;
+  if (fe_zero(a->z)) {
+    fe_copy(bx, a->x);
+    fe_copy(by, a->y);
+    fe_copy(r1, a->z);
+    return;
+  }
+  fe_mul(md, n0, a->z, a->z, zz);
+  fe_mul(md, n0, bx, zz, t);
+  fe_sub(md, t, a->x, h);
+  fe_mul(md, n0, by, zz, t);
+  fe_mul(md, n0, t, a->z, t);
+  fe_sub(md, t, a->y, s);
+  if (!fe_zero(h)) {
+    pt_madd_gen(md, n0, a, h, s);
+    return;
+  }
+  if (fe_zero(s)) {
+    pt_dbl(md, n0, a);
+    return;
+  }
+  pt_inf(a);
+}
+
+/* The guest ptToAffine: (X / Z^2, Y / Z^3) with one feInv, (0, 0) for
+   Z = 0. */
+static void pt_to_affine(const Machine *m, const uint32_t *md, uint32_t n0, const uint32_t *r1, const Value *e, const PtJac *a, uint32_t *x, uint32_t *y) {
+  uint32_t zi[8];
+  uint32_t zi2[8];
+  uint32_t t[8];
+  if (fe_zero(a->z)) {
+    fe_set_zero(x);
+    fe_set_zero(y);
+    return;
+  }
+  fe_inv(m, md, n0, r1, e, a->z, zi);
+  fe_mul(md, n0, zi, zi, zi2);
+  fe_mul(md, n0, a->x, zi2, x);
+  fe_mul(md, n0, zi2, zi, t);
+  fe_mul(md, n0, a->y, t, y);
+}
+
+/* S8b2 (USER ruling Q-S8b2-1 (a)): ptMulC md k p in C. The guest ptMul
+   (domain.lang) is the specification: the C does its field ops (ptMulWord
+   over pc32 for fe7 k down to fe0 k from jcInf: ptDbl, then ptMadd for a 1
+   bit; then ptToAffine) on the same Words, in the same order, also for
+   inputs that are not canonical. The charge (Q-S8b2-9 (a)) uses the feMulC
+   unit: 64 for each field product, 8 for each feAdd or feSub, over 256
+   doubles, 256 adds and one feInv. ptDbl 7 feMul, 8 feAdd, 4 feSub; ptMadd
+   4 feMul, 2 feSub, then ptMaddGen 7 feMul, 5 feSub; feInv over fpE (254
+   bits, 110 one bits) 364 products; ptToAffine 4 feMul. That is 4976 x 64
+   + 4864 x 8 = 357376 steps. A modE chain with more than 364 products adds
+   64 for each product past 364 (frE: 381 products, 358464 steps). All of
+   it is spent once, before the work. The guest ptMul spends about
+   3328912.5 + 71199.7 D + 103710.4 A steps for D doubles and A adds
+   (48105904 at D = A = 256), more than the 20M fuel of one run. */
+static const Value *pt_mulc(Machine *m, Op op, const Value *const *a, uint32_t n) {
+  const Value *out = NULL;
+  const Value *limbs[8];
+  const Value *coords[2];
+  PtJac acc;
+  uint32_t md[8];
+  uint32_t r1[8];
+  uint32_t k[8];
+  uint32_t px[8];
+  uint32_t py[8];
+  uint32_t x[8];
+  uint32_t y[8];
+  uint32_t n0;
+  uint64_t count;
+  uint32_t i;
+  uint32_t j;
+  if (blocked(m, a[0], op, 0, 0, a, n, &out) || blocked(m, a[2], op, 0, 0, a, n, &out))
+    return out;
+  if (!val_is(a[0], OP_CTOR) || a[0]->argc != 5u)
+    return internal(m, "a ptMulC on a modulus that is not a FeMod");
+  if (!val_is(a[2], OP_CTOR) || a[2]->argc != 2u)
+    return internal(m, "a ptMulC on a point that is not a Pt1");
+  if (!fe_words(m, op, a[0]->args[0], a, n, md, &out) || !fe_words(m, op, a[0]->args[3], a, n, r1, &out) ||
+      !fe_words(m, op, a[1], a, n, k, &out) || !fe_words(m, op, a[2]->args[0], a, n, px, &out) ||
+      !fe_words(m, op, a[2]->args[1], a, n, py, &out))
+    return out;
+  if (blocked(m, a[0]->args[1], op, 0, 0, a, n, &out))
+    return out;
+  if (a[0]->args[1]->kind != VAL_WORD)
+    return internal(m, "a ptMulC on a FeMod with an n0' that is not a Word");
+  if (!fe_bits_count(m, op, a[0]->args[4], a, n, &count, &out))
+    return out;
+  if (!spend(m, 357376u + (count > 364u ? 64u * (count - 364u) : 0u)))
+    return NULL;
+  n0 = (uint32_t)a[0]->args[1]->nat;
+  pt_inf(&acc);
+  for (i = 8u; i > 0u; i--)
+    for (j = 0; j < 32u; j++) {
+      pt_dbl(md, n0, &acc);
+      if (((k[i - 1u] << j) >> 31) == 1u)
+        pt_madd(md, n0, r1, &acc, px, py);
+    }
+  pt_to_affine(m, md, n0, r1, a[0]->args[4], &acc, x, y);
+  for (i = 0; i < 8u; i++)
+    limbs[i] = val_word(m, x[i]);
+  coords[0] = val_op(m, VAL_OP, OP_CTOR, a[1]->inst, a[1]->field, limbs, 8u);
+  for (i = 0; i < 8u; i++)
+    limbs[i] = val_word(m, y[i]);
+  coords[1] = val_op(m, VAL_OP, OP_CTOR, a[1]->inst, a[1]->field, limbs, 8u);
+  return val_op(m, VAL_OP, OP_CTOR, a[2]->inst, a[2]->field, coords, 2u);
+}
+
+/* S8b2 (USER rulings Q-S8b2-29 (b), Q-S8b2-30 (a)): poseidon2C a b, the C
+   mirror of the guest poseidon2 (psHash2 psMulC in domain.lang). It does the
+   steps of psHash2 in the same order, with fe_mul and fe_add on the table of
+   front/poseidon_c.h (r, n0', R^2 mod r and the 204 constants). */
+
+/* psPow5: x^5 by 3 products (x2 = x x, x4 = x2 x2, x5 = x4 x). */
+static void ps_c_pow5(uint32_t *x) {
+  uint32_t x2[8];
+  uint32_t x4[8];
+  fe_mul(ps_c_r, PS_C_N0, x, x, x2);
+  fe_mul(ps_c_r, PS_C_N0, x2, x2, x4);
+  fe_mul(ps_c_r, PS_C_N0, x4, x, x);
+}
+
+/* psMix: row i is (m_i0 s0 + m_i1 s1) + m_i2 s2, each row on the old state. */
+static void ps_c_mix(uint32_t s[3][8]) {
+  uint32_t t[3][8];
+  uint32_t p[8];
+  uint32_t i;
+  uint32_t j;
+  for (i = 0; i < 3u; i++) {
+    fe_mul(ps_c_r, PS_C_N0, ps_c_mds[3u * i], s[0], t[i]);
+    for (j = 1; j < 3u; j++) {
+      fe_mul(ps_c_r, PS_C_N0, ps_c_mds[3u * i + j], s[j], p);
+      fe_add(ps_c_r, t[i], p, t[i]);
+    }
+  }
+  for (i = 0; i < 3u; i++)
+    fe_copy(t[i], s[i]);
+}
+
+/* One fixed charge before the work (Q-S8b2-30 (a)), in the feMulC unit:
+   57864 = 831 x 64 + 585 x 8 (3 conversion products + 8 x 18 + 57 x 12 round
+   products, 65 x 9 feAdd). */
+static const Value *poseidon2c(Machine *m, Op op, const Value *const *a, uint32_t n) {
+  static const uint32_t one[8] = {1u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+  const Value *out = NULL;
+  const Value *limbs[8];
+  uint32_t x[8];
+  uint32_t y[8];
+  uint32_t s[3][8];
+  uint32_t k;
+  uint32_t i;
+  if (!fe_words(m, op, a[0], a, n, x, &out) || !fe_words(m, op, a[1], a, n, y, &out))
+    return out;
+  if (!spend(m, 57864u))
+    return NULL;
+  /* The state (0, a R2, b R2): a and b in Montgomery form. */
+  fe_set_zero(s[0]);
+  fe_mul(ps_c_r, PS_C_N0, x, ps_c_r2, s[1]);
+  fe_mul(ps_c_r, PS_C_N0, y, ps_c_r2, s[2]);
+  /* The 65 rounds of psAll, the first first: prFull (the S-box on the 3
+     elements) for the first and the last PS_C_HALF rounds, prPart (element 0
+     only) between them. */
+  for (k = 0; k < PS_C_ROUNDS; k++) {
+    for (i = 0; i < 3u; i++)
+      fe_add(ps_c_r, s[i], ps_c_rc[3u * k + i], s[i]);
+    if (k < PS_C_HALF || k >= PS_C_HALF + PS_C_PART) {
+      for (i = 0; i < 3u; i++)
+        ps_c_pow5(s[i]);
+    } else {
+      ps_c_pow5(s[0]);
+    }
+    ps_c_mix(s);
+  }
+  /* Element 0 times the canonical 1 (feOne) is the canonical result. */
+  fe_mul(ps_c_r, PS_C_N0, s[0], one, x);
+  for (i = 0; i < 8u; i++)
+    limbs[i] = val_word(m, x[i]);
+  return val_op(m, VAL_OP, OP_CTOR, a[0]->inst, a[0]->field, limbs, 8u);
+}
+
+/* S8b2 (USER rulings Q-S8b2-36 (a), Q-S8b2-37 (a)): schnorrCheckC p r s m, the
+   C mirror of the guest schnorrCheck (domain.lang). The guest is the
+   specification: the C does scValid, scOut, kcChallenge, the two ptMulC, the
+   two ptMadd and scJacEq on the same Words with the C helpers of ptMulC. The
+   FeMod values are the domain defs fpMod and frMod. keccak-f runs on 64-bit
+   lanes here: langc does not link the crypto layer.
+   The charge is fixed and spent one time before the work:
+   2 x 357376 (the two ptMulC, Q-S8b2-9 (a))
+   + 64 x 37 field products (ptOnCurve 2 x 3, scOut 4, ptMadd 2 x 11, scJacEq 5)
+   + 8 x 26 feAdd or feSub (ptOnCurve 2 x 3, g1Gen 1, ptMadd 2 x 7, kcModR 5)
+   + 2 x 7440 for keccak (2 steps for each of the 2 x 24 x 155 lane operations)
+   = 714752 + 2368 + 208 + 14880 = 732208 steps. */
+#define SC_C_REST 17456u
+
+static const uint64_t sc_c_rc[24] = {
+  0x0000000000000001ull, 0x0000000000008082ull, 0x800000000000808aull, 0x8000000080008000ull,
+  0x000000000000808bull, 0x0000000080000001ull, 0x8000000080008081ull, 0x8000000000008009ull,
+  0x000000000000008aull, 0x0000000000000088ull, 0x0000000080008009ull, 0x000000008000000aull,
+  0x000000008000808bull, 0x800000000000008bull, 0x8000000000008089ull, 0x8000000000008003ull,
+  0x8000000000008002ull, 0x8000000000000080ull, 0x000000000000800aull, 0x800000008000000aull,
+  0x8000000080008081ull, 0x8000000000008080ull, 0x0000000080000001ull, 0x8000000080008008ull};
+static const uint32_t sc_c_rot[24] = {1u,  3u,  6u,  10u, 15u, 21u, 28u, 36u, 45u, 55u, 2u,  14u,
+                                      27u, 41u, 56u, 8u,  25u, 43u, 62u, 18u, 39u, 61u, 20u, 44u};
+static const uint32_t sc_c_pil[24] = {10u, 7u,  11u, 17u, 18u, 3u, 5u,  16u, 8u,  21u, 24u, 4u,
+                                      15u, 23u, 19u, 13u, 12u, 2u, 20u, 14u, 22u, 9u,  6u,  1u};
+
+static uint64_t sc_c_rotl(uint64_t x, uint32_t k) {
+  return (x << k) | (x >> (64u - k));
+}
+
+/* keccak-f[1600] on the 25 lanes of ST: theta, rho and pi, chi, iota. One
+   round has 155 lane operations (55 + 24 + 75 + 1). */
+static void sc_c_keccak_f(uint64_t *st) {
+  uint64_t bc[5];
+  uint64_t t;
+  uint32_t rd;
+  uint32_t i;
+  uint32_t j;
+  for (rd = 0; rd < 24u; rd++) {
+    for (i = 0; i < 5u; i++)
+      bc[i] = st[i] ^ st[i + 5u] ^ st[i + 10u] ^ st[i + 15u] ^ st[i + 20u];
+    for (i = 0; i < 5u; i++) {
+      t = bc[(i + 4u) % 5u] ^ sc_c_rotl(bc[(i + 1u) % 5u], 1u);
+      for (j = 0; j < 25u; j += 5u)
+        st[j + i] ^= t;
+    }
+    t = st[1];
+    for (i = 0; i < 24u; i++) {
+      j = sc_c_pil[i];
+      bc[0] = st[j];
+      st[j] = sc_c_rotl(t, sc_c_rot[i]);
+      t = bc[0];
+    }
+    for (j = 0; j < 25u; j += 5u) {
+      for (i = 0; i < 5u; i++)
+        bc[i] = st[j + i];
+      for (i = 0; i < 5u; i++)
+        st[j + i] ^= ~bc[(i + 1u) % 5u] & bc[(i + 2u) % 5u];
+    }
+    st[0] ^= sc_c_rc[rd];
+  }
+}
+
+/* The guest kcChallenge: E = keccak256 of the 5 Fe of C (32 bytes each, the
+   most significant byte first) mod RM. The 160 bytes are 2 blocks of 136
+   bytes with the pad byte 0x01 at byte 24 and 0x80 at byte 135 of the second
+   block. The digest is a 256-bit value, the most significant byte first;
+   kcModR is 5 conditional subtractions of RM. */
+static void sc_c_challenge(uint32_t c[5][8], const uint32_t *rm, uint32_t *e) {
+  uint8_t buf[272];
+  uint64_t st[25];
+  uint32_t t[8];
+  uint32_t w;
+  uint32_t i;
+  uint32_t j;
+  uint32_t k;
+  memset(buf, 0, sizeof buf);
+  memset(st, 0, sizeof st);
+  for (i = 0; i < 5u; i++)
+    for (j = 0; j < 8u; j++)
+      for (k = 0; k < 4u; k++)
+        buf[32u * i + 4u * j + k] = (uint8_t)(c[i][7u - j] >> (24u - 8u * k));
+  buf[160] = 0x01u;
+  buf[271] = 0x80u;
+  for (i = 0; i < 2u; i++) {
+    for (j = 0; j < 17u; j++)
+      for (k = 0; k < 8u; k++)
+        st[j] ^= (uint64_t)buf[136u * i + 8u * j + k] << (8u * k);
+    sc_c_keccak_f(st);
+  }
+  for (j = 0; j < 8u; j++) {
+    w = 0;
+    for (k = 0; k < 4u; k++)
+      w = (w << 8) | (uint32_t)((st[j / 2u] >> (8u * (4u * (j % 2u) + k))) & 0xffu);
+    e[7u - j] = w;
+  }
+  for (i = 0; i < 5u; i++)
+    if (!fe_less(e, rm)) {
+      fe_sub_raw(e, rm, t);
+      fe_copy(t, e);
+    }
+}
+
+/* The guest ptOnCurve on (X, Y): each coordinate is less than the modulus,
+   and the point is the point at infinity or y^2 = x^3 + 3 (3 = 3 R1). */
+static int sc_c_on_curve(const uint32_t *md, uint32_t n0, const uint32_t *r1, const uint32_t *x, const uint32_t *y) {
+  uint32_t l[8];
+  uint32_t q[8];
+  uint32_t c[8];
+  uint32_t b2[8];
+  uint32_t b3[8];
+  uint32_t rhs[8];
+  if (!fe_less(x, md) || !fe_less(y, md))
+    return 0;
+  if (fe_zero(x) && fe_zero(y))
+    return 1;
+  fe_mul(md, n0, y, y, l);
+  fe_mul(md, n0, x, x, q);
+  fe_mul(md, n0, q, x, c);
+  fe_add(md, r1, r1, b2);
+  fe_add(md, b2, r1, b3);
+  fe_add(md, c, b3, rhs);
+  return memcmp(l, rhs, sizeof l) == 0;
+}
+
+/* The loop of ptMulC: (X, Y) = K (PX, PY), affine. */
+static void sc_c_mul(const Machine *m, const uint32_t *md, uint32_t n0, const uint32_t *r1, const Value *e,
+                     const uint32_t *k, const uint32_t *px, const uint32_t *py, uint32_t *x, uint32_t *y) {
+  PtJac acc;
+  uint32_t i;
+  uint32_t j;
+  pt_inf(&acc);
+  for (i = 8u; i > 0u; i--)
+    for (j = 0; j < 32u; j++) {
+      pt_dbl(md, n0, &acc);
+      if (((k[i - 1u] << j) >> 31) == 1u)
+        pt_madd(md, n0, r1, &acc, px, py);
+    }
+  pt_to_affine(m, md, n0, r1, e, &acc, x, y);
+}
+
+/* The guest scJacEq on the affine (AX, AY) and the Jacobian J: Z = 0 and the
+   affine point at infinity, or a finite affine point with X = x Z^2 and
+   Y = y Z^3. The guest text has 5 products (Z Z two times). */
+static int sc_c_jac_eq(const uint32_t *md, uint32_t n0, const uint32_t *ax, const uint32_t *ay, const PtJac *j) {
+  uint32_t zz[8];
+  uint32_t zzz[8];
+  uint32_t t[8];
+  uint32_t u[8];
+  int inf = fe_zero(ax) && fe_zero(ay);
+  if (fe_zero(j->z))
+    return inf;
+  fe_mul(md, n0, j->z, j->z, zz);
+  fe_mul(md, n0, ax, zz, t);
+  fe_mul(md, n0, j->z, j->z, zz);
+  fe_mul(md, n0, j->z, zz, zzz);
+  fe_mul(md, n0, ay, zzz, u);
+  return !inf && memcmp(j->x, t, sizeof t) == 0 && memcmp(j->y, u, sizeof u) == 0;
+}
+
+static const Value *domain_def(Machine *m, const char *name);
+
+static const Value *schnorr_checkc(Machine *m, Op op, const Value *const *a, uint32_t n) {
+  static const uint32_t one[8] = {1u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+  const Value *out = NULL;
+  const Value *fp;
+  const Value *fr;
+  PtJac j;
+  uint32_t md[8];
+  uint32_t r1[8];
+  uint32_t rm[8];
+  uint32_t px[8];
+  uint32_t py[8];
+  uint32_t rx[8];
+  uint32_t ry[8];
+  uint32_t s[8];
+  uint32_t c[5][8];
+  uint32_t e[8];
+  uint32_t gy[8];
+  uint32_t ax[8];
+  uint32_t ay[8];
+  uint32_t bx[8];
+  uint32_t by[8];
+  uint32_t n0;
+  uint64_t count;
+  int ok;
+  if (blocked(m, a[0], op, 0, 0, a, n, &out) || blocked(m, a[1], op, 0, 0, a, n, &out))
+    return out;
+  if (!val_is(a[0], OP_CTOR) || a[0]->argc != 2u || !val_is(a[1], OP_CTOR) || a[1]->argc != 2u)
+    return internal(m, "a schnorrCheckC on a point that is not a Pt1");
+  if (!fe_words(m, op, a[0]->args[0], a, n, px, &out) || !fe_words(m, op, a[0]->args[1], a, n, py, &out) ||
+      !fe_words(m, op, a[1]->args[0], a, n, rx, &out) || !fe_words(m, op, a[1]->args[1], a, n, ry, &out) ||
+      !fe_words(m, op, a[2], a, n, s, &out) || !fe_words(m, op, a[3], a, n, c[4], &out))
+    return out;
+  fp = domain_def(m, "fpMod");
+  if (fp == NULL)
+    return NULL;
+  fr = domain_def(m, "frMod");
+  if (fr == NULL)
+    return NULL;
+  if (!val_is(fp, OP_CTOR) || fp->argc != 5u || !val_is(fr, OP_CTOR) || fr->argc != 5u ||
+      fp->args[1]->kind != VAL_WORD)
+    return internal(m, "a schnorrCheckC on a domain where fpMod or frMod is not a FeMod");
+  if (!fe_words(m, op, fp->args[0], a, n, md, &out) || !fe_words(m, op, fp->args[3], a, n, r1, &out) ||
+      !fe_words(m, op, fr->args[0], a, n, rm, &out) || !fe_bits_count(m, op, fp->args[4], a, n, &count, &out))
+    return out;
+  if (!spend(m, 2u * (357376u + (count > 364u ? 64u * (count - 364u) : 0u)) + SC_C_REST))
+    return NULL;
+  n0 = (uint32_t)fp->args[1]->nat;
+  /* scValid: P is on the curve and is not the point at infinity, R is on the
+     curve, and s is less than r. */
+  ok = sc_c_on_curve(md, n0, r1, px, py) && !(fe_zero(px) && fe_zero(py)) && sc_c_on_curve(md, n0, r1, rx, ry) &&
+       fe_less(s, rm);
+  if (ok) {
+    /* kcChallenge on the canonical coordinates (scOut) and m. */
+    fe_mul(md, n0, rx, one, c[0]);
+    fe_mul(md, n0, ry, one, c[1]);
+    fe_mul(md, n0, px, one, c[2]);
+    fe_mul(md, n0, py, one, c[3]);
+    sc_c_challenge(c, rm, e);
+    /* scEquation: s G against R + e P. g1Gen is (R1, 2 R1). */
+    fe_add(md, r1, r1, gy);
+    sc_c_mul(m, md, n0, r1, fp->args[4], s, r1, gy, ax, ay);
+    sc_c_mul(m, md, n0, r1, fp->args[4], e, px, py, bx, by);
+    pt_inf(&j);
+    pt_madd(md, n0, r1, &j, rx, ry);
+    pt_madd(md, n0, r1, &j, bx, by);
+    ok = sc_c_jac_eq(md, n0, ax, ay, &j);
+  }
+  return make(m, VAL_OP, ok ? OP_INR : OP_INL, 0, 1, constant(m, OP_UNIT_VAL), NULL, NULL);
+}
+
 static const Value *reduce_flag_if(Machine *m, const Value *const *a, uint32_t n) {
   const Value *out;
   if (blocked(m, a[0], OP_FLAG_IF, 0, 0, a, n, &out))
@@ -2079,6 +2835,11 @@ static const Value *transp_data(Machine *m, const Value *head, const Value *line
   case OP_W_ROTL:
   case OP_W_ROTR:
   case OP_W_LT:
+  case OP_FE_MULC:
+  case OP_PT_MULC:
+  case OP_POSEIDON2C:
+  case OP_SCHNORRCHECKC:
+  case OP_OPAQUE:
   case OP_W_EQ:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
@@ -3069,6 +3830,16 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return word_op(m, op, a, n, w_rotr);
   case OP_W_LT:
     return word_test(m, op, a, n, w_lt);
+  case OP_FE_MULC:
+    return fe_mulc(m, op, a, n);
+  case OP_PT_MULC:
+    return pt_mulc(m, op, a, n);
+  case OP_OPAQUE:
+    return internal(m, "an opaque head in a core");
+  case OP_POSEIDON2C:
+    return poseidon2c(m, op, a, n);
+  case OP_SCHNORRCHECKC:
+    return schnorr_checkc(m, op, a, n);
   case OP_W_EQ:
     return word_test(m, op, a, n, w_eq);
   case OP_NONZERO_OF:
@@ -3132,6 +3903,9 @@ static const Value *eval_inner(Machine *m, const Env *env, const Core *c) {
   case CORE_VAR:
     return env_lookup(m, env, c->index);
   case CORE_GLOBAL:
+    /* S8b2 (Q-S8b2-38 (a)): the check keeps an opaque def stuck. */
+    if (m->opaque_stuck && c->index < m->def_count && m->defs[c->index].opaque)
+      return opaque_head(m, c->index);
     return def_value(m, c->index);
   case CORE_NAT:
     return val_nat(m, c->nat);
@@ -3480,6 +4254,13 @@ static const Core *quote_inner(Machine *m, uint32_t level, const Value *v) {
     return quote_binder(m, level, v, CORE_SIGMA);
   case VAL_OP:
   case VAL_STUCK:
+    if (v->kind == VAL_STUCK && v->op == OP_OPAQUE) {
+      /* S8b2 (Q-S8b2-40 (a)): the stuck head of an opaque def quotes to the def. */
+      Core *g = new_core(m, CORE_GLOBAL);
+      if (g != NULL)
+        g->index = v->inst;
+      return g;
+    }
     return quote_op(m, level, v);
   case VAL_PLAM:
     return quote_binder(m, level, v, CORE_PLAM);
@@ -3778,7 +4559,10 @@ static void print_other(Printer *p, const Value *v, int atom) {
     return;
   case VAL_OP:
   case VAL_STUCK:
-    print_op_name(p, v);
+    if (v->kind == VAL_STUCK && v->op == OP_OPAQUE && v->inst < p->m->def_count)
+      put(p, p->m->defs[v->inst].name); /* S8b2 (Q-S8b2-40 (a)): the def name */
+    else
+      print_op_name(p, v);
     return;
   case VAL_IVAL:
     print_ival(p, v, atom);

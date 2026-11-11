@@ -1,0 +1,1 @@
+def bad : Fe -> Fe -> Fe := fun (a : Fe) (b : Fe) => poseidon2C a b

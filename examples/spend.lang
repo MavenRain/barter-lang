@@ -1,15 +1,21 @@
 -- The spend check and settle of design sec 4 on literals (S6, laws S1
 -- and N1, Q-S6-4 (a); S7 settle with the Params, the book and a
 -- certificate), kit mode: a guest program gets a Nullifier, a Token or a
--- Key only as an input, thus this file makes them from Nat literals. The
+-- Key only as an input, thus this file makes the nullifiers and the tokens
+-- from Nat literals. The keys and the signatures are the fixtures of
+-- domain/domain.lang (S8b2, Q-S8b2-4 (a)): fxKey7 is the key 7, and each
+-- signature is a Schnorr signature on its intent or its statement. The
 -- spent set holds the nullifier 1. The intent sells 3 of the token 1 for
 -- the token 2, with startOut 4, minOut 2, the window that starts at
 -- height 1 with the length 2, and the deadline 5. At height 2 the decay
 -- floor is 3. The Params have the members 3 and 4, the threshold 2 and
--- the pair (1, 2). In the book the owner (key 7) has 3 of the token 1 and
--- the solver (key 9) has 3 of the token 2. The certificate of the members
+-- the pair (1, 2). In the book the owner (key fxKey7) has 3 of the token 1 and
+-- the solver (key fxKey9) has 3 of the token 2. The certificate of the members
 -- 3 and 4 signs the fill statement (the nullifier 1, the height 2). The
 -- general laws are in domain/domain.lang.
+-- A row that needs a Schnorr result has no refl def: the check does not
+-- unfold a message word (S8b2, Q-S8b2-38 (a), Q-S8b2-41 (a)), thus
+-- test/eval/expect.txt gives the value of each such row.
 def nfA : Nullifier := nullifier 1
 def nfB : Nullifier := nullifier 2
 def spentA : Spent := spCons nfA spNil
@@ -24,34 +30,30 @@ def amt1 : Amount := amSucc amZero
 def amt2 : Amount := amSucc amt1
 def amt3 : Amount := amSucc amt2
 def amt4 : Amount := amSucc amt3
-def intentA : Intent := intent (token 1) (token 2) (seal Amount amt3) (seal Amount amt2) (seal Height htZero) amt4 (window ht1 ht1) ht5 nfA (key 7) (sig 7)
-def quoteA : Quote := quote (seal Amount amt3) (key 9)
-def quoteLow : Quote := quote (seal Amount amt2) (key 9)
-def membersA : Members := mbCons (key 3) (mbCons (key 4) mbNil)
+def intentA : Intent := intent (token 1) (token 2) (seal Amount amt3) (seal Amount amt2) (seal Height htZero) amt4 (window ht1 ht1) ht5 nfA (key fxKey7) (sig fxIntent7R fxIntent7S)
+def quoteA : Quote := quote (seal Amount amt3) (key fxKey9)
+def quoteLow : Quote := quote (seal Amount amt2) (key fxKey9)
+def membersA : Members := mbCons (key fxKey3) (mbCons (key fxKey4) mbNil)
 def paramsA : Params := params membersA ht2 ht2 (paCons (tradePair (token 1) (token 2)) paNil) (prices amt1 amt1 amt1) refl refl
 def paramsB : Params := params membersA ht2 ht2 paNil (prices amt1 amt1 amt1) refl refl
-def bookA : Book := bkCredit (key 7) (token 1) amt3 (bkCredit (key 9) (token 2) amt3 (book acNil spNil))
+def bookA : Book := bkCredit (key fxKey7) (token 1) amt3 (bkCredit (key fxKey9) (token 2) amt3 (book acNil spNil))
 def bookSpent : Book := bkSpend nfA bookA
-def bookOwner : Book := bkCredit (key 7) (token 1) amt3 (book acNil spNil)
-def certA : Certificate := certificate (smFill nfA ht2) (csCons (key 3) (sig 3) (csCons (key 4) (sig 4) csNil))
-def certOne : Certificate := certificate (smFill nfA ht2) (csCons (key 3) (sig 3) csNil)
+def bookOwner : Book := bkCredit (key fxKey7) (token 1) amt3 (book acNil spNil)
+def certA : Certificate := certificate (smFill nfA ht2) (csCons (key fxKey3) (sig fxFill3R fxFill3S) (csCons (key fxKey4) (sig fxFill4R fxFill4S) csNil))
+def certOne : Certificate := certificate (smFill nfA ht2) (csCons (key fxKey3) (sig fxFill3R fxFill3S) csNil)
 -- The nullifier 1 is spent: reject with the reason reused.
 def reusedRow : Verdict Outcome := settle paramsA bookSpent intentA quoteA certA ht2
 def reusedRefl : Path (Verdict Outcome) reusedRow (reject Outcome reused) := refl
 -- No nullifier is spent, the certificate checks, the quote output 3 is at
 -- the floor and both sides can pay: accept.
 def freshRow : Verdict Outcome := settle paramsA bookA intentA quoteA certA ht2
-def freshRefl : Path (Verdict Outcome) freshRow (accept Outcome (settled (transfer (token 1) amt3 (key 7) (key 9)) (transfer (token 2) amt3 (key 9) (key 7)))) := refl
 -- The quote output 2 is below the floor 3: reject with the reason
 -- belowFloor.
 def lowRow : Verdict Outcome := settle paramsA bookA intentA quoteLow certA ht2
-def lowRefl : Path (Verdict Outcome) lowRow (reject Outcome belowFloor) := refl
 -- One signature is below the threshold 2: reject with the reason badCert.
 def badCertRow : Verdict Outcome := settle paramsA bookA intentA quoteA certOne ht2
-def badCertRefl : Path (Verdict Outcome) badCertRow (reject Outcome badCert) := refl
 -- The solver has no funds of the token 2: accept with unfilled.
 def poorRow : Verdict Outcome := settle paramsA bookOwner intentA quoteA certA ht2
-def poorRefl : Path (Verdict Outcome) poorRow (accept Outcome unfilled) := refl
 -- The Params do not list the pair: reject with the reason badPair.
 def pairRow : Verdict Outcome := settle paramsB bookA intentA quoteA certA ht2
 def pairRefl : Path (Verdict Outcome) pairRow (reject Outcome badPair) := refl
@@ -65,4 +67,3 @@ def stepReused : Verdict GovState := govStep (govState paramsA paramsA htZero bo
 def stepReusedRefl : Path (Verdict GovState) stepReused (reject GovState reused) := refl
 def stepReusedN1 : Path (Verdict GovState) stepReused (reject GovState reused) := n1Replay (govState paramsA paramsA htZero bookSpent) intentA quoteA certA ht2 refl
 def spentAfter : Verdict (Sum Unit Unit) := vdThen GovState (Sum Unit Unit) stepFresh (fun (t : GovState) => accept (Sum Unit Unit) (bkHas nfA (ssBook t)))
-def spentAfterRefl : Path (Verdict (Sum Unit Unit)) spentAfter (accept (Sum Unit Unit) (inr unit)) := refl

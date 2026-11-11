@@ -1,0 +1,1 @@
+def bad : Pt1 -> Pt1 -> Fe -> Fe -> Sum Unit Unit := fun (p : Pt1) (r : Pt1) (s : Fe) (m : Fe) => schnorrCheckC p r s m

@@ -1,0 +1,7 @@
+-- S8b2 (USER ruling Q-S8b2-36 (a)): the check accepts this program, but the
+-- entry irX uses schnorrCheckC on run-time values. `langc ir` must refuse it
+-- with REFUSE_LOWER: the Wasm host does not lower schnorrCheckC (HOST-LIMIT).
+def pb : Sum Unit Unit -> Nat := fun (s : Sum Unit Unit) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) s
+def irX : Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Nat :=
+  fun (s0 : Word) (s1 : Word) (s2 : Word) (s3 : Word) (s4 : Word) (s5 : Word) (s6 : Word) (s7 : Word) =>
+    pb (schnorrCheckC g1Gen g1Gen (fe s0 s1 s2 s3 s4 s5 s6 s7) feOne)

@@ -198,3 +198,8 @@ bound-entry-intent.lang REFUSE_BOUND
 bound-entry-height.lang REFUSE_BOUND
 word-type.lang REFUSE_WORD
 word-op.lang REFUSE_WORD
+fe-mulc.lang REFUSE_WORD
+pt-mulc.lang REFUSE_WORD
+p2c.lang REFUSE_WORD
+opaque-guest.lang REFUSE_DATA
+sc-c.lang REFUSE_WORD

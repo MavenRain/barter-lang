@@ -19,7 +19,7 @@ HEADERS = $(wildcard src/*.h src/front/*.h src/crypto/*.h)
 
 .PHONY: build check check-clang clean
 
-build: build/langc build/fronttool build/pathtool build/notraptool build/cryptotool
+build: build/langc build/fronttool build/pathtool build/notraptool build/cryptotool build/poseidongen
 
 build/domain.c: domain/domain.lang gen/embed.c
 	mkdir -p build
@@ -44,6 +44,12 @@ build/cryptotool: $(CRYPTO_TOOL) $(HEADERS)
 	mkdir -p build
 	$(TCC) $(CFLAGS) -o build/cryptotool $(CRYPTO_TOOL)
 
+# The Poseidon constants of domain/domain.lang (S8b2, Q-S8b2-17 (a)):
+# test/gate.sh compares the print with the domain text.
+build/poseidongen: gen/poseidon.c $(CRYPTO) $(HEADERS)
+	mkdir -p build
+	$(TCC) $(CFLAGS) -o build/poseidongen gen/poseidon.c $(CRYPTO)
+
 check-clang: build/domain.c
 	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c
 	$(CC) $(CLANG_FLAGS) $(FRONT_TOOL)
@@ -51,7 +57,7 @@ check-clang: build/domain.c
 	$(CC) $(CLANG_FLAGS) $(NOTRAP_TOOL)
 	$(CC) $(CLANG_FLAGS) $(CRYPTO_TOOL)
 
-check: build/langc build/fronttool build/pathtool build/notraptool build/cryptotool check-clang
+check: build/langc build/fronttool build/pathtool build/notraptool build/cryptotool build/poseidongen check-clang
 	sh test/gate.sh
 	sh test/review.sh
 	build/fronttool

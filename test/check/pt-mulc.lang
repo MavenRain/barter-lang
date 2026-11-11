@@ -1,0 +1,1 @@
+def bad : Fe -> Pt1 -> Pt1 := fun (k : Fe) (p : Pt1) => ptMulC fpMod k p

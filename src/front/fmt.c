@@ -230,7 +230,7 @@ static void put_head(FmtText *out, const Decl *decls, size_t i) {
   } else {
     switch (d->kind) {
       case DECL_DEF:
-        put_str(out, d->is_law ? "law def " : "def ");
+        put_str(out, d->is_law ? "law def " : d->is_opaque ? "opaque def " : "def ");
         if (d->is_rec) put_str(out, "rec ");
         break;
       case DECL_AXIOM: put_str(out, "axiom "); break;

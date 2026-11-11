@@ -1,0 +1,2 @@
+-- REFUSE_DATA (Q-S8b2-38 (a)): `opaque` is a domain-only modifier.
+opaque def myOpaque : Size := sz0

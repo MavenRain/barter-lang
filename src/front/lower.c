@@ -608,6 +608,56 @@ static int lower_ctor(Low *l, Buf *b, const Value *v, Operand *out) {
   return ctor_full(l, b, v, fam->param_count, c->field_count, v->inst - fam->first_ctor, out);
 }
 
+/* S8b2 (USER ruling Q-S8b-4 (a)): feMulC md a b runs as the guest feMul md a
+   b, its specification. The C builtin is for the evaluator only. */
+static int fe_mulc(Low *l, Buf *b, const Value *v, Operand *out) {
+  Operand ops[3];
+  Slot res = slot_new(l);
+  uint32_t d = 0;
+  if (v->argc != 3u)
+    return internal(l, "a feMulC that does not take 3 arguments");
+  while (d < l->m->def_count && (l->m->defs[d].name == NULL || strcmp(l->m->defs[d].name, "feMul") != 0))
+    d++;
+  if (d >= l->m->def_count)
+    return internal(l, "a feMulC with no guest feMul");
+  *out = slot_get(l, res);
+  return lower(l, b, v->args[0], &ops[0]) && lower(l, b, v->args[1], &ops[1]) && lower(l, b, v->args[2], &ops[2]) &&
+         apply_into(l, b, def_value(l->m, d), ops, 3u, res);
+}
+
+/* S8b2 (USER ruling Q-S8b2-10 (a), it changes the Wasm leg of Q-S8b2-1 (a)):
+   the Wasm host refuses ptMulC md k p. The IR has no call statement, so the
+   guest ptMul unfolds, and each ptMulWord step gives about 3 times the IR of
+   the step before it: 256 steps do not fit. The C builtin is for the
+   evaluator only. */
+static int pt_mulc(Low *l, Buf *b, const Value *v, Operand *out) {
+  (void)b;
+  (void)out;
+  if (v->argc != 3u)
+    return internal(l, "a ptMulC that does not take 3 arguments");
+  return refuse(l, "ptMulC (HOST-LIMIT)");
+}
+
+/* S8b2 (USER rulings Q-S8b2-29 (b), Q-S8b2-30 (a)): the Wasm host does not
+   lower poseidon2C (HOST-LIMIT). The C builtin is for the evaluator only. */
+static int p2c(Low *l, Buf *b, const Value *v, Operand *out) {
+  (void)b;
+  (void)out;
+  if (v->argc != 2u)
+    return internal(l, "a poseidon2C that does not take 2 arguments");
+  return refuse(l, "poseidon2C (HOST-LIMIT)");
+}
+
+/* S8b2 (USER ruling Q-S8b2-36 (a)): the Wasm host does not lower
+   schnorrCheckC (HOST-LIMIT). The C builtin is for the evaluator only. */
+static int sc_c(Low *l, Buf *b, const Value *v, Operand *out) {
+  (void)b;
+  (void)out;
+  if (v->argc != 4u)
+    return internal(l, "a schnorrCheckC that does not take 4 arguments");
+  return refuse(l, "schnorrCheckC (HOST-LIMIT)");
+}
+
 /* A canonical value. An eliminator here has too few arguments, so it is a
    function. */
 static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
@@ -674,6 +724,10 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_W_ROTL:
   case OP_W_ROTR:
   case OP_W_LT:
+  case OP_FE_MULC:
+  case OP_PT_MULC:
+  case OP_POSEIDON2C:
+  case OP_SCHNORRCHECKC:
   case OP_W_EQ:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
@@ -685,6 +739,8 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_NONZERO_OF:
   case OP_NONZERO_VALUE:
     return closure(l);
+  case OP_OPAQUE:
+    return internal(l, "an opaque head in the run path");
   case OP_NONZERO:
     return give(l, out, 0);
   case OP_FM_LEN:
@@ -1301,6 +1357,16 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
     return word_not(l, b, v, out);
   case OP_W_LT:
     return word_cmp(l, b, v, IR_OP_LT, out);
+  case OP_FE_MULC:
+    return fe_mulc(l, b, v, out);
+  case OP_PT_MULC:
+    return pt_mulc(l, b, v, out);
+  case OP_POSEIDON2C:
+    return p2c(l, b, v, out);
+  case OP_SCHNORRCHECKC:
+    return sc_c(l, b, v, out);
+  case OP_OPAQUE:
+    return internal(l, "an opaque head in the run path");
   case OP_W_EQ:
     return word_cmp(l, b, v, IR_OP_EQ, out);
   case OP_NONZERO_OF:

@@ -161,6 +161,7 @@ static int starts_atom(TokKind kind) {
     case TOK_KW_COFAMILY:
     case TOK_KW_SEALED:
     case TOK_KW_LAW:
+    case TOK_KW_OPAQUE:
       return 0;
   }
   return 0;
@@ -398,6 +399,7 @@ static const Term *parse_atom(Parser *p) {
     case TOK_KW_COFAMILY:
     case TOK_KW_SEALED:
     case TOK_KW_LAW:
+    case TOK_KW_OPAQUE:
       break;
   }
   fail_at(p, tok, "a term");
@@ -577,6 +579,7 @@ static int parse_and(Parser *p, Decl *d) {
   d->is_state = 0;
   d->is_sealed = 0;
   d->is_law = 0;
+  d->is_opaque = 0;
   return parse_family(p, d);
 }
 
@@ -589,6 +592,7 @@ static int parse_decl(Parser *p, Decl *d) {
   d->is_state = tok->kind == TOK_KW_STATE;
   d->is_sealed = 0;
   d->is_law = 0;
+  d->is_opaque = 0;
   switch (tok->kind) {
     /* `sealed family` and `law def` (S5): domain-only modifiers; the
        checker refuses them in a program (REFUSE_DATA). */
@@ -600,6 +604,10 @@ static int parse_decl(Parser *p, Decl *d) {
       bump(p);
       d->is_law = 1;
       return at(p, TOK_KW_DEF) ? parse_def(p, d) : fail_at(p, cur(p), "'def' after 'law'");
+    case TOK_KW_OPAQUE:
+      bump(p);
+      d->is_opaque = 1;
+      return at(p, TOK_KW_DEF) ? parse_def(p, d) : fail_at(p, cur(p), "'def' after 'opaque'");
     case TOK_KW_DEF: return parse_def(p, d);
     case TOK_KW_AXIOM: return parse_axiom(p, d);
     case TOK_KW_FAMILY:

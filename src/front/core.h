@@ -99,7 +99,12 @@ typedef enum {
   OP_W_ROTL,
   OP_W_ROTR,
   OP_W_LT,
-  OP_W_EQ
+  OP_W_EQ,
+  OP_FE_MULC, /* S8b2 (Q-S8b-4 (a)): feMulC md a b, a C builtin of the Word set */
+  OP_PT_MULC, /* S8b2 (Q-S8b2-1 (a)): ptMulC md k p, a C builtin of the Word set */
+  OP_POSEIDON2C, /* S8b2 (Q-S8b2-30 (a)): poseidon2C a b, a C builtin of the Word set */
+  OP_SCHNORRCHECKC, /* S8b2 (Q-S8b2-36 (a)): schnorrCheckC p r s m, a C builtin of the Word set */
+  OP_OPAQUE /* S8b2 (Q-S8b2-38 (a), Q-S8b2-40 (a)): the stuck head of an opaque def in the check; inst = the def index; a core does not hold it */
 } Op;
 
 /* The instance of pure, map, bind and filter (formers F5 and F8). */
@@ -311,6 +316,7 @@ typedef struct {
   /* A law-only def (S5, rule O7): a `law def` of the domain, or a guest def
      that uses one outside a Trunc1 argument. */
   int law_only;
+  int opaque; /* S8b2 (Q-S8b2-38 (a)): an `opaque def`; the check does not unfold it */
   /* The interval rule (S5, Q-S5-7 (a)): a guest program def with an Amount
      (1) or a Height (2) codomain keeps the bound of its result, with each
      parameter at its width; 0 for any other def. */
@@ -336,6 +342,7 @@ typedef struct {
   uint32_t ctor_cap;
   unsigned depth;
   uint64_t fuel;
+  int opaque_stuck; /* S8b2 (Q-S8b2-38 (a)): 1 in the check (an opaque def stays stuck), 0 in the run path */
   int has_state;          /* the program declares the state (slice K3a) */
   uint32_t state_family; /* the state family, when has_state is 1 */
   uint32_t fresh; /* the count of fresh levels for the Kan head test */
@@ -391,6 +398,10 @@ const Value *val_closure(Machine *m, ValKind kind, const char *name, const Value
 int val_is(const Value *v, Op op);
 const Env *env_push(Machine *m, const Env *env, const Value *value);
 const Value *def_value(Machine *m, uint32_t index);
+/* S8b2 (Q-S8b2-38 (a)): the check is done. The run path unfolds each opaque
+   def, thus the call drops each def value that the check made. The call
+   does nothing when opaque_stuck is 0. */
+void opaque_run_mode(Machine *m);
 const Value *eval_core(Machine *m, const Env *env, const Core *core);
 const Value *apply_value(Machine *m, const Value *fn, const Value *arg);
 /* transp LINE PHI BASE, for JSON rule 1 (S3b). LINE is a path value in U. */

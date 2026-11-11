@@ -469,48 +469,6 @@ def wLen : Window -> Height :=
   fun (w : Window) => elim (fun (v : Window) => Height) (fun (s : Height) (l : Height) => htSucc l) w
 def wLenPos : (w : Window) -> Path (Sum Unit Unit) (htLe (htSucc htZero) (wLen w)) (inr unit) :=
   fun (w : Window) => elim (fun (v : Window) => Path (Sum Unit Unit) (htLe (htSucc htZero) (wLen v)) (inr unit)) (fun (s : Height) (l : Height) => refl) w
--- The token and the nullifier: one constructor over Nat each. tkEq and
--- nfEq are the equality words (inr unit is "equal").
-family Token := token (tokId : Nat)
-def tkEq : Token -> Token -> Sum Unit Unit :=
-  fun (a : Token) (b : Token) => elim (fun (u : Token) => Sum Unit Unit)
-    (fun (i : Nat) => elim (fun (v : Token) => Sum Unit Unit)
-      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
-family Nullifier := nullifier (nfId : Nat)
-def nfEq : Nullifier -> Nullifier -> Sum Unit Unit :=
-  fun (a : Nullifier) (b : Nullifier) => elim (fun (u : Nullifier) => Sum Unit Unit)
-    (fun (i : Nat) => elim (fun (v : Nullifier) => Sum Unit Unit)
-      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
--- The opaque types (design sec 3): one constructor over Nat each. Their
--- equality words come with the slice that needs them (S6, S7); Hash comes
--- at S8b.
-family Key := key (keyId : Nat)
-family Sig := sig (sigId : Nat)
-family Commitment := commitment (cmtId : Nat)
-family Root := root (rootId : Nat)
--- The swap of design sec 4 (S6). Intent, Quote, Transfer and Fill are
--- records: a family with one constructor, so each field is a projection.
--- A domain field name is global (rule R4), so each field name has the
--- prefix of its record. A program reads an Amount or Height field of a
--- record parameter at its width (Q-S6-1 (a)) and a Window field of a
--- record parameter at the Window widths (Q-S6-2 (a)). The decoy index is
--- a Sealed Height (OI-6).
-family Intent := intent (itInTok : Token) (itOutTok : Token) (itAmtIn : Sealed Amount) (itMinOut : Sealed Amount) (itDecoy : Sealed Height) (itStartOut : Amount) (itWindow : Window) (itDeadline : Height) (itNf : Nullifier) (itOwner : Key) (itSig : Sig)
-family Quote := quote (qtOut : Sealed Amount) (qtSolver : Key)
-family Transfer := transfer (trTok : Token) (trAmt : Amount) (trFrom : Key) (trTo : Key)
-family Fill := fill (flIntent : Intent) (flQuote : Quote) (flLegIn : Transfer) (flLegOut : Transfer) (flHeight : Height)
--- The reasons of a rejected settle. S6 uses reused, expired, badPair,
--- badProof and belowFloor. badCert, belowTMin, badPrice and noFunds come
--- with S7, badShare with S8b.
-family Reason := badProof | badShare | expired | reused | badPair | belowFloor | badCert | belowTMin | badPrice | noFunds
--- A verdict is accept with a value or reject with a reason. The value
--- field is vdVal, because vdOk is the name of a law of S6.
-family Verdict (A : Type 0) := accept (vdVal : A) | reject (vdWhy : Reason)
--- The outcome of a settle is two transfers. unfilled comes with the replay
--- of S7.
-family Outcome := settled (stIn : Transfer) (stOut : Transfer) | unfilled
--- The spent nullifiers: the spent field of the Book of S7 (Q-S6-6 (a), Q-S7-5 (a)).
-family Spent := spNil | spCons (spHead : Nullifier) (spTail : Spent)
 -- sAnd, sOr and sNot on the flag Sum Unit Unit (inr unit is "yes"): a hand
 -- port of gavel-lang 1bc4437.
 def sAnd : Sum Unit Unit -> Sum Unit Unit -> Sum Unit Unit :=
@@ -519,524 +477,6 @@ def sOr : Sum Unit Unit -> Sum Unit Unit -> Sum Unit Unit :=
   fun (a : Sum Unit Unit) (b : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => b) (fun (u : Unit) => inr unit) a
 def sNot : Sum Unit Unit -> Sum Unit Unit :=
   fun (a : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) a
--- vdCheck A s w v is v when s says yes, else reject A w.
-def vdCheck : (A : Type 0) -> Sum Unit Unit -> Reason -> Verdict A -> Verdict A :=
-  fun (A : Type 0) (s : Sum Unit Unit) (w : Reason) (v : Verdict A) =>
-    elim (fun (k : Sum Unit Unit) => Verdict A) (fun (u : Unit) => reject A w) (fun (u : Unit) => v) s
--- spHas n l says yes when the nullifier n is in l.
-def spHas : Nullifier -> Spent -> Sum Unit Unit :=
-  fun (n : Nullifier) (l : Spent) =>
-    elim (fun (k : Spent) => Sum Unit Unit) (inl unit) (fun (g : Nullifier) (t : Spent) (ih : Sum Unit Unit) => sOr (nfEq n g) ih) l
--- sgVrf k g says yes when the signature g is from the key k. It is a
--- stand-in: at S8b the match becomes the proof check.
-def sgVrf : Key -> Sig -> Sum Unit Unit :=
-  fun (k : Key) (g : Sig) => elim (fun (u : Key) => Sum Unit Unit)
-    (fun (i : Nat) => elim (fun (v : Sig) => Sum Unit Unit)
-      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) g) k
--- encMap2 (Q-S6-3 (a)) maps a word with two arguments over two sealed
--- values: encBind on the first value, encMap on the second value.
-def encMap2 : (A : Type 0) -> (B : Type 0) -> (C : Type 0) -> (A -> B -> C) -> Sealed A -> Sealed B -> Sealed C :=
-  fun (A : Type 0) (B : Type 0) (C : Type 0) (g : A -> B -> C) (m : Sealed A) (n : Sealed B) =>
-    encBind A C m (fun (a : A) => encMap B C (fun (b : B) => g a b) n)
--- wClamp w h is the height h clamped into [wStart w, wStart w + wLen w].
-def wClamp : Window -> Height -> Height :=
-  fun (w : Window) (h : Height) =>
-    htSelect Height h (wStart w) (wStart w)
-      (htSelect Height (htAdd (wStart w) (wLen w)) h (htAdd (wStart w) (wLen w)) h)
--- The decay floor of design sec 4 (Q-S6-5 (a)). At the clamped height hc
--- the floor is so - (so - m)(hc - s)/wl, with the window start s, the
--- window length wl, startOut so and minOut m. The test o >= floor is
--- wl*o + hc*so + s*m >= wl*so + hc*m + s*so: it has no subtraction and
--- no division. decayTest wl s hc o so m says yes when the quote output o
--- is at or above the floor. Bounds: wl <= 2^32, s <= 2^32 - 1,
--- hc < 2^33 and each amount <= 2^64 - 1, thus each product is below 2^97
--- and each side is below 2^98, in the word.
-def decayTest : Height -> Height -> Height -> Amount -> Amount -> Amount -> Sum Unit Unit :=
-  fun (wl : Height) (s : Height) (hc : Height) (o : Amount) (so : Amount) (m : Amount) =>
-    amLe (amAdd (amScale wl so) (amAdd (amScale hc m) (amScale s so)))
-      (amAdd (amScale wl o) (amAdd (amScale hc so) (amScale s m)))
--- decayAt i h o m is the decay test of the intent i at the height h, for
--- the open quote output o and the open minOut m. It does not use open.
-def decayAt : Intent -> Height -> Amount -> Amount -> Sum Unit Unit :=
-  fun (i : Intent) (h : Height) (o : Amount) (m : Amount) =>
-    decayTest (wLen (itWindow i)) (wStart (itWindow i)) (wClamp (itWindow i) h) o (itStartOut i) m
--- cross i q h is the sealed decay test: the quote output and minOut stay
--- sealed (Q-S6-3 (a)).
-def cross : Intent -> Quote -> Height -> Sealed (Sum Unit Unit) :=
-  fun (i : Intent) (q : Quote) (h : Height) =>
-    encMap2 Amount Amount (Sum Unit Unit) (fun (o : Amount) (m : Amount) => decayAt i h o m) (qtOut q) (itMinOut i)
--- settleOut i q is the two transfers of a fill: amtIn from the owner to
--- the solver, and the quote output from the solver to the owner.
-def settleOut : Intent -> Quote -> Outcome :=
-  fun (i : Intent) (q : Quote) =>
-    settled (transfer (itInTok i) (open Amount (itAmtIn i)) (itOwner i) (qtSolver q))
-      (transfer (itOutTok i) (open Amount (qtOut q)) (qtSolver q) (itOwner i))
--- The laws of the swap (S6, design sec 4). vdOk and vdBad are the two
--- steps down a chain of checks: a check with the flag yes gives the rest
--- of the chain, and a check with the flag no gives reject with its reason.
-law def vdOk : (A : Type 0) -> (f : Sum Unit Unit) -> (w : Reason) -> (v : Verdict A) -> Path (Sum Unit Unit) f (inr unit) -> Path (Verdict A) (vdCheck A f w v) v :=
-  fun (A : Type 0) (f : Sum Unit Unit) (w : Reason) (v : Verdict A) (p : Path (Sum Unit Unit) f (inr unit)) =>
-    cong (fun (b : Sum Unit Unit) => vdCheck A b w v) p
-law def vdBad : (A : Type 0) -> (f : Sum Unit Unit) -> (w : Reason) -> (v : Verdict A) -> Path (Sum Unit Unit) f (inl unit) -> Path (Verdict A) (vdCheck A f w v) (reject A w) :=
-  fun (A : Type 0) (f : Sum Unit Unit) (w : Reason) (v : Verdict A) (p : Path (Sum Unit Unit) f (inl unit)) =>
-    cong (fun (b : Sum Unit Unit) => vdCheck A b w v) p
--- S2 (Q-S6-5 (a)): open of a sealed map with two arguments is the map of
--- the open values. Thus the sealed decay test cross gives the decay test
--- of the open quote output and the open minOut.
-law def openMap2 : (A : Type 0) -> (B : Type 0) -> (C : Type 0) -> (g : A -> B -> C) -> (m : Sealed A) -> (n : Sealed B) -> Path C (open C (encMap2 A B C g m n)) (g (open A m) (open B n)) :=
-  fun (A : Type 0) (B : Type 0) (C : Type 0) (g : A -> B -> C) (m : Sealed A) (n : Sealed B) =>
-    elim (fun (s : Sealed A) => Path C (open C (encMap2 A B C g s n)) (g (open A s) (open B n)))
-      (fun (a : A) =>
-        elim (fun (t : Sealed B) => Path C (open C (encMap2 A B C g (seal A a) t)) (g a (open B t))) (fun (b : B) => refl) n) m
-law def s2Cross : (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (decayAt i h (open Amount (qtOut q)) (open Amount (itMinOut i))) :=
-  fun (i : Intent) (q : Quote) (h : Height) =>
-    openMap2 Amount Amount (Sum Unit Unit) (fun (o : Amount) (m : Amount) => decayAt i h o m) (qtOut q) (itMinOut i)
--- S5: the outcome of a fill entry is its two legs. Both legs are in one
--- entry, or the entry is not in the log.
-def fillOutcome : Fill -> Outcome :=
-  fun (f : Fill) => settled (flLegIn f) (flLegOut f)
-law def s5Fill : (f : Fill) -> Path Outcome (fillOutcome f) (settled (flLegIn f) (flLegOut f)) :=
-  fun (f : Fill) => refl
--- The governance of design sec 5 (S7). Members is the committee: a list of
--- keys. A Pair is a token pair that the Params admit for a swap.
-family Members := mbNil | mbCons (mbHead : Key) (mbTail : Members)
-family Pair := tradePair (paIn : Token) (paOut : Token)
-family Pairs := paNil | paCons (paHead : Pair) (paTail : Pairs)
--- The price list of langc serve (Q-S0-11 (b), Q-S7-1 (a)): three tiers in
--- cents. The genesis tiers are 1, 5 and 20. Each tier is in the range 1 to
--- 20: pcTier x says yes when 1 <= x <= pcMax, and pcIn says yes when the
--- three tiers are in the range.
-family Prices := prices (pcLow : Amount) (pcBuild : Amount) (pcExport : Amount)
-def pcMax : Amount :=
-  amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero)))))))))))))))))))
--- amCase x is inl unit at zero, else inr of the predecessor. amLeLin x y is
--- amLe x y in about x * y steps. The eval of an elim computes each recursive
--- value first, thus the inner elim of amLe takes about C(x + y, x) steps
--- (amLe 20 20 reaches the arena limit). amLeLin does a case on amCase y in
--- place of the inner elim.
-def amCase : Amount -> Sum Unit Amount :=
-  fun (x : Amount) => elim (fun (a : Amount) => Sum Unit Amount) (inl unit) (fun (a : Amount) (ih : Sum Unit Amount) => inr a) x
-def amLeLin : Amount -> Amount -> Sum Unit Unit :=
-  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Sum Unit Unit)
-    (fun (y : Amount) => inr unit)
-    (fun (a : Amount) (ih : Amount -> Sum Unit Unit) => fun (y : Amount) =>
-      elim (fun (s : Sum Unit Amount) => Sum Unit Unit) (fun (u : Unit) => inl unit) (fun (b : Amount) => ih b) (amCase y)) x
-def pcTier : Amount -> Sum Unit Unit :=
-  fun (x : Amount) => sAnd (amLeLin (amSucc amZero) x) (amLeLin x pcMax)
-def pcIn : Prices -> Sum Unit Unit :=
-  fun (p : Prices) => sAnd (pcTier (pcLow p)) (sAnd (pcTier (pcBuild p)) (pcTier (pcExport p)))
--- tMin is the static floor of the threshold (Q-S0-9 (a)): 2.
-def tMin : Height := htSucc (htSucc htZero)
--- Params (Q-S7-1 (a)): the committee, the threshold prT, the amend quorum
--- prQuorum, the token pairs, the price list and two proof fields. prFloor
--- is the floor tMin <= prT (law G3) and prRange is the price range. A
--- proof field names an earlier field. A closed Params with a proof field
--- that the kernel cannot check gives REFUSE_FLOOR.
-family Params := params (prMembers : Members) (prT : Height) (prQuorum : Height) (prPairs : Pairs) (prPrices : Prices) (prFloor : Path (Sum Unit Unit) (htLe tMin prT) (inr unit)) (prRange : Path (Sum Unit Unit) (pcIn prPrices) (inr unit))
--- A statement is what a certificate signs (Q-S7-3 (a)): a fill (the
--- nullifier and the height) or an amendment (the Root digest and the
--- height), or a withdrawal (the key, the token, the amount and the
--- height; USER ruling, S7 session 5). A certificate is a statement and
--- a list of signatures.
-family Statement := smFill (smNf : Nullifier) (smAt : Height) | smAmend (smRoot : Root) (smAmAt : Height) | smWithdraw (smWdKey : Key) (smWdTok : Token) (smWdAmt : Amount) (smWdAt : Height)
-family Sigs := csNil | csCons (csKey : Key) (csSig : Sig) (csRest : Sigs)
-family Certificate := certificate (ctStmt : Statement) (ctSigs : Sigs)
--- The equality words of S7 (inr unit is "equal").
-def keyEq : Key -> Key -> Sum Unit Unit :=
-  fun (a : Key) (b : Key) => elim (fun (u : Key) => Sum Unit Unit)
-    (fun (i : Nat) => elim (fun (v : Key) => Sum Unit Unit)
-      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
-def rootEq : Root -> Root -> Sum Unit Unit :=
-  fun (a : Root) (b : Root) => elim (fun (u : Root) => Sum Unit Unit)
-    (fun (i : Nat) => elim (fun (v : Root) => Sum Unit Unit)
-      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
-def htEq : Height -> Height -> Sum Unit Unit :=
-  fun (a : Height) (b : Height) => sAnd (htLe a b) (htLe b a)
-def amEq : Amount -> Amount -> Sum Unit Unit :=
-  fun (a : Amount) (b : Amount) => sAnd (amLeLin a b) (amLeLin b a)
-def smEq : Statement -> Statement -> Sum Unit Unit :=
-  fun (s : Statement) (t : Statement) =>
-    elim (fun (u : Statement) => Sum Unit Unit)
-      (fun (n : Nullifier) (h : Height) => elim (fun (v : Statement) => Sum Unit Unit)
-        (fun (m : Nullifier) (g : Height) => sAnd (nfEq n m) (htEq h g))
-        (fun (r : Root) (g : Height) => inl unit)
-        (fun (j : Key) (o : Token) (y : Amount) (g : Height) => inl unit) t)
-      (fun (r : Root) (h : Height) => elim (fun (v : Statement) => Sum Unit Unit)
-        (fun (m : Nullifier) (g : Height) => inl unit)
-        (fun (o : Root) (g : Height) => sAnd (rootEq r o) (htEq h g))
-        (fun (j : Key) (o : Token) (y : Amount) (g : Height) => inl unit) t)
-      (fun (k : Key) (w : Token) (x : Amount) (h : Height) => elim (fun (v : Statement) => Sum Unit Unit)
-        (fun (m : Nullifier) (g : Height) => inl unit)
-        (fun (o : Root) (g : Height) => inl unit)
-        (fun (j : Key) (o : Token) (y : Amount) (g : Height) => sAnd (keyEq k j) (sAnd (tkEq w o) (sAnd (amEq x y) (htEq h g)))) t) s
--- mbHas k m says yes when the key k is in the committee m. csHas k s says
--- yes when s has a signature from the key k (sgVrf until S8b).
-def mbHas : Key -> Members -> Sum Unit Unit :=
-  fun (k : Key) (m : Members) =>
-    elim (fun (t : Members) => Sum Unit Unit) (inl unit) (fun (j : Key) (r : Members) (ih : Sum Unit Unit) => sOr (keyEq k j) ih) m
-def csHas : Key -> Sigs -> Sum Unit Unit :=
-  fun (k : Key) (s : Sigs) =>
-    elim (fun (t : Sigs) => Sum Unit Unit) (inl unit) (fun (j : Key) (g : Sig) (r : Sigs) (ih : Sum Unit Unit) => sOr (sAnd (keyEq k j) (sgVrf k g)) ih) s
--- ctCount m s is the count of the distinct members of m with a signature
--- in s: a member counts once, at its last place in m.
-def ctCount : Members -> Sigs -> Height :=
-  fun (m : Members) (s : Sigs) =>
-    elim (fun (t : Members) => Height) htZero
-      (fun (k : Key) (r : Members) (ih : Height) =>
-        elim (fun (b : Sum Unit Unit) => Height) (fun (u : Unit) => ih) (fun (u : Unit) => htSucc ih) (sAnd (csHas k s) (sNot (mbHas k r)))) m
--- ctCheck m k s c (Q-S7-3 (a), gavel-lang checkCert) says yes when the
--- certificate c signs the statement s and at least k distinct members of
--- m signed it.
-def ctCheck : Members -> Height -> Statement -> Certificate -> Sum Unit Unit :=
-  fun (m : Members) (k : Height) (s : Statement) (c : Certificate) =>
-    sAnd (smEq s (ctStmt c)) (htLe k (ctCount m (ctSigs c)))
--- vdWith A s w gives reject A w when s says no. When s says yes, it gives
--- k of the path from s to yes: thus k can build a proof field.
-def vdWith : (A : Type 0) -> (s : Sum Unit Unit) -> Reason -> (Path (Sum Unit Unit) s (inr unit) -> Verdict A) -> Verdict A :=
-  fun (A : Type 0) (s : Sum Unit Unit) (w : Reason) =>
-    elim (fun (b : Sum Unit Unit) => (Path (Sum Unit Unit) b (inr unit) -> Verdict A) -> Verdict A)
-      (fun (u : Unit) (g : Path (Sum Unit Unit) (inl u) (inr unit) -> Verdict A) => reject A w)
-      (fun (u : Unit) => elim (fun (v : Unit) => (Path (Sum Unit Unit) (inr v) (inr unit) -> Verdict A) -> Verdict A)
-        (fun (g : Path (Sum Unit Unit) (inr unit) (inr unit) -> Verdict A) => g refl) u) s
--- certOpen A p c s x is the certified open (Q-S7-3 (a)): reject badCert
--- when c does not give prT p signatures of the members of p on s, else
--- accept of the open value of x.
-def certOpen : (A : Type 0) -> Params -> Certificate -> Statement -> Sealed A -> Verdict A :=
-  fun (A : Type 0) (p : Params) (c : Certificate) (s : Statement) (x : Sealed A) =>
-    vdCheck A (ctCheck (prMembers p) (prT p) s c) badCert (accept A (open A x))
--- The amendment of design sec 5 (Q-S7-2 (a)): the new committee, the
--- threshold, the quorum, the pairs, the prices and the Root digest of the
--- text. It has no proof fields: amend builds them.
-family Amendment := amendment (adMembers : Members) (adT : Height) (adQuorum : Height) (adPairs : Pairs) (adPrices : Prices) (adRoot : Root)
--- The log entries (Q-S7-6 (a)): a fill, an amendment, a deposit and a
--- withdrawal, each with its height. The Log is not indexed by Params.
-family Entry := enFill (efIntent : Intent) (efQuote : Quote) (efCert : Certificate) (efAt : Height) | enAmend (eaAmend : Amendment) (eaCert : Certificate) (eaAt : Height) | enDeposit (edKey : Key) (edTok : Token) (edAmt : Amount) (edAt : Height) | enWithdraw (ewKey : Key) (ewTok : Token) (ewAmt : Amount) (ewCert : Certificate) (ewAt : Height)
-family Log := lgNil | lgCons (lgHead : Entry) (lgTail : Log)
--- The book of S7 (Q-S7-5 (a)): a journal of account rows and the spent
--- nullifiers. A credit adds the row (k, t, x, 0) and a debit adds the row
--- (k, t, 0, x). The balance of the key k at the token t is the sum of the
--- credits less the sum of the debits of the rows of k and t.
-family Acct := acct (acKey : Key) (acTok : Token) (acCredit : Amount) (acDebit : Amount)
-family Accts := acNil | acCons (acHead : Acct) (acTail : Accts)
-family Book := book (bkAccts : Accts) (bkSpent : Spent)
--- The state of the replay: the Params in force, the Params of the next
--- height (G2), the height of the last amendment and the book. The name is
--- GovState, because State is the program state of a guest (USER ruling,
--- S7 session 3).
-family GovState := govState (ssCur : Params) (ssNext : Params) (ssAt : Height) (ssBook : Book)
--- acMine k t a says yes when the row a is of the key k and the token t.
--- acIn and acOut are the sums of the credits and of the debits of k and t.
-def acMine : Key -> Token -> Acct -> Sum Unit Unit :=
-  fun (k : Key) (t : Token) (a : Acct) => sAnd (keyEq k (acKey a)) (tkEq t (acTok a))
-def acIn : Key -> Token -> Accts -> Amount :=
-  fun (k : Key) (t : Token) (l : Accts) =>
-    elim (fun (r : Accts) => Amount) amZero
-      (fun (a : Acct) (r : Accts) (ih : Amount) =>
-        elim (fun (s : Sum Unit Unit) => Amount) (fun (u : Unit) => ih) (fun (u : Unit) => amAdd (acCredit a) ih) (acMine k t a)) l
-def acOut : Key -> Token -> Accts -> Amount :=
-  fun (k : Key) (t : Token) (l : Accts) =>
-    elim (fun (r : Accts) => Amount) amZero
-      (fun (a : Acct) (r : Accts) (ih : Amount) =>
-        elim (fun (s : Sum Unit Unit) => Amount) (fun (u : Unit) => ih) (fun (u : Unit) => amAdd (acDebit a) ih) (acMine k t a)) l
--- The book words: bkCredit and bkDebit add a row. bkCan k t x b says yes
--- when k can pay x of t: the debits and x are at most the credits
--- (amLeLin). bkSpend adds a spent nullifier; bkHas says yes when the
--- nullifier is spent.
-def bkCredit : Key -> Token -> Amount -> Book -> Book :=
-  fun (k : Key) (t : Token) (x : Amount) (b : Book) => book (acCons (acct k t x amZero) (bkAccts b)) (bkSpent b)
-def bkDebit : Key -> Token -> Amount -> Book -> Book :=
-  fun (k : Key) (t : Token) (x : Amount) (b : Book) => book (acCons (acct k t amZero x) (bkAccts b)) (bkSpent b)
-def bkCan : Key -> Token -> Amount -> Book -> Sum Unit Unit :=
-  fun (k : Key) (t : Token) (x : Amount) (b : Book) => amLeLin (amAdd (acOut k t (bkAccts b)) x) (acIn k t (bkAccts b))
-def bkSpend : Nullifier -> Book -> Book :=
-  fun (n : Nullifier) (b : Book) => book (bkAccts b) (spCons n (bkSpent b))
-def bkHas : Nullifier -> Book -> Sum Unit Unit :=
-  fun (n : Nullifier) (b : Book) => spHas n (bkSpent b)
--- The pair check of settle: the two tokens are not equal and the Params
--- list the pair. paHas a b l says yes when l has the pair (a, b).
-def paHas : Token -> Token -> Pairs -> Sum Unit Unit :=
-  fun (a : Token) (b : Token) (l : Pairs) =>
-    elim (fun (t : Pairs) => Sum Unit Unit) (inl unit) (fun (r : Pair) (s : Pairs) (ih : Sum Unit Unit) => sOr (sAnd (tkEq a (paIn r)) (tkEq b (paOut r))) ih) l
-def paOk : Params -> Intent -> Sum Unit Unit :=
-  fun (p : Params) (i : Intent) => sAnd (sNot (tkEq (itInTok i) (itOutTok i))) (paHas (itInTok i) (itOutTok i) (prPairs p))
--- The funds of a fill (Q-S7-5 (a)): fdFlag b i q says yes when the owner
--- can pay amtIn of the in token and the solver can pay the quote output
--- of the out token. fdPick f i q is the two transfers of settleOut on yes
--- and unfilled on no.
-def fdFlag : Book -> Intent -> Quote -> Sum Unit Unit :=
-  fun (b : Book) (i : Intent) (q : Quote) =>
-    sAnd (bkCan (itOwner i) (itInTok i) (open Amount (itAmtIn i)) b) (bkCan (qtSolver q) (itOutTok i) (open Amount (qtOut q)) b)
-def fdPick : Sum Unit Unit -> Intent -> Quote -> Outcome :=
-  fun (f : Sum Unit Unit) (i : Intent) (q : Quote) =>
-    elim (fun (s : Sum Unit Unit) => Outcome) (fun (u : Unit) => unfilled) (fun (u : Unit) => settleOut i q) f
--- settle p b i q c h (S7, Q-S7-3 (a), Q-S7-5 (a)) is a chain of checks,
--- with the first check outermost: reused (the spent nullifiers of the
--- book b), expired, badPair (the pairs of the Params p), badProof,
--- badCert, belowFloor. Then the funds tail gives the two transfers or
--- unfilled. Each check has a named tail: settleRest is the checks 2 to 6,
--- settlePair 3 to 6, settleProof 4 to 6, settleCert 5 and 6, settleFloor
--- the check 6 and settleFunds the funds tail. The certificate c signs the
--- fill statement (the nullifier and the height h), and the floor test
--- opens the sealed values only after the certificate check (the shape of
--- certOpen).
-def settleFunds : Book -> Intent -> Quote -> Outcome :=
-  fun (b : Book) (i : Intent) (q : Quote) => fdPick (fdFlag b i q) i q
-def settleFloor : Book -> Intent -> Quote -> Height -> Verdict Outcome :=
-  fun (b : Book) (i : Intent) (q : Quote) (h : Height) =>
-    vdCheck Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleFunds b i q))
-def settleCert : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
-    vdCheck Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h)
-def settleProof : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
-    vdCheck Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleCert p b i q c h)
-def settlePair : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
-    vdCheck Outcome (paOk p i) badPair (settleProof p b i q c h)
-def settleRest : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
-    vdCheck Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h)
-def settle : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
-    vdCheck Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h)
--- govAmend p a c h (design sec 5, Q-S7-2 (a)) gives reject badCert when c
--- does not give prQuorum p signatures of the members of p on the
--- amendment statement (the Root digest of a and the height h), reject
--- belowTMin when the new threshold is below tMin, and reject badPrice
--- when a new price tier is out of the range. Else it gives accept of the
--- new Params, with the two paths of vdWith as the proof fields. The name
--- is govAmend, because amend is a guest name (rule R4, USER ruling, S7
--- session 4).
-def govAmend : Params -> Amendment -> Certificate -> Height -> Verdict Params :=
-  fun (p : Params) (a : Amendment) (c : Certificate) (h : Height) =>
-    vdCheck Params (ctCheck (prMembers p) (prQuorum p) (smAmend (adRoot a) h) c) badCert
-      (vdWith Params (htLe tMin (adT a)) belowTMin
-        (fun (f : Path (Sum Unit Unit) (htLe tMin (adT a)) (inr unit)) =>
-          vdWith Params (pcIn (adPrices a)) badPrice
-            (fun (g : Path (Sum Unit Unit) (pcIn (adPrices a)) (inr unit)) =>
-              accept Params (params (adMembers a) (adT a) (adQuorum a) (adPairs a) (adPrices a) f g))))
--- S1 on the settle of S7: when the six flags and the funds flag are yes,
--- settle gives accept with the two transfers of settleOut. When the six
--- flags are yes and the funds flag is no, settle gives accept with
--- unfilled. When the flags before a check are yes and the flag of that
--- check is no, settle gives reject with its reason. Each law is a trans
--- chain of vdOk, then one vdBad or one cong on the funds flag.
-law def s1Accept : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit) -> Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit) -> Path (Sum Unit Unit) (fdFlag b i q) (inr unit) -> Path (Verdict Outcome) (settle p b i q c h) (accept Outcome (settleOut i q)) :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit)) (p5 : Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit)) (p6 : Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit)) (p7 : Path (Sum Unit Unit) (fdFlag b i q) (inr unit)) =>
-    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (accept Outcome (settleOut i q))
-      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
-      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (accept Outcome (settleOut i q))
-        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
-        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (accept Outcome (settleOut i q))
-          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
-          (trans (Verdict Outcome) (settleProof p b i q c h) (settleCert p b i q c h) (accept Outcome (settleOut i q))
-            (vdOk Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleCert p b i q c h) p4)
-            (trans (Verdict Outcome) (settleCert p b i q c h) (settleFloor b i q h) (accept Outcome (settleOut i q))
-              (vdOk Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h) p5)
-              (trans (Verdict Outcome) (settleFloor b i q h) (accept Outcome (settleFunds b i q)) (accept Outcome (settleOut i q))
-                (vdOk Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleFunds b i q)) p6)
-                (cong (fun (f : Sum Unit Unit) => accept Outcome (fdPick f i q)) p7))))))
-law def s1Unfilled : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit) -> Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit) -> Path (Sum Unit Unit) (fdFlag b i q) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (accept Outcome unfilled) :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit)) (p5 : Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit)) (p6 : Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit)) (z7 : Path (Sum Unit Unit) (fdFlag b i q) (inl unit)) =>
-    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (accept Outcome unfilled)
-      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
-      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (accept Outcome unfilled)
-        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
-        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (accept Outcome unfilled)
-          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
-          (trans (Verdict Outcome) (settleProof p b i q c h) (settleCert p b i q c h) (accept Outcome unfilled)
-            (vdOk Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleCert p b i q c h) p4)
-            (trans (Verdict Outcome) (settleCert p b i q c h) (settleFloor b i q h) (accept Outcome unfilled)
-              (vdOk Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h) p5)
-              (trans (Verdict Outcome) (settleFloor b i q h) (accept Outcome (settleFunds b i q)) (accept Outcome unfilled)
-                (vdOk Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleFunds b i q)) p6)
-                (cong (fun (f : Sum Unit Unit) => accept Outcome (fdPick f i q)) z7))))))
-law def s1Expired : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome expired) :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (z2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inl unit)) =>
-    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome expired)
-      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
-      (vdBad Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) z2)
-law def s1BadPair : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome badPair) :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (z3 : Path (Sum Unit Unit) (paOk p i) (inl unit)) =>
-    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome badPair)
-      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
-      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (reject Outcome badPair)
-        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
-        (vdBad Outcome (paOk p i) badPair (settleProof p b i q c h) z3))
-law def s1BadProof : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome badProof) :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (z4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inl unit)) =>
-    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome badProof)
-      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
-      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (reject Outcome badProof)
-        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
-        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (reject Outcome badProof)
-          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
-          (vdBad Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleCert p b i q c h) z4)))
-law def s1BadCert : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit) -> Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome badCert) :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit)) (z5 : Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inl unit)) =>
-    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome badCert)
-      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
-      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (reject Outcome badCert)
-        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
-        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (reject Outcome badCert)
-          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
-          (trans (Verdict Outcome) (settleProof p b i q c h) (settleCert p b i q c h) (reject Outcome badCert)
-            (vdOk Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleCert p b i q c h) p4)
-            (vdBad Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h) z5))))
-law def s1BelowFloor : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit) -> Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome belowFloor) :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i)) (inr unit)) (p5 : Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit)) (z6 : Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inl unit)) =>
-    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome belowFloor)
-      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
-      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (reject Outcome belowFloor)
-        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
-        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (reject Outcome belowFloor)
-          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
-          (trans (Verdict Outcome) (settleProof p b i q c h) (settleCert p b i q c h) (reject Outcome belowFloor)
-            (vdOk Outcome (sgVrf (itOwner i) (itSig i)) badProof (settleCert p b i q c h) p4)
-            (trans (Verdict Outcome) (settleCert p b i q c h) (settleFloor b i q h) (reject Outcome belowFloor)
-              (vdOk Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h) p5)
-              (vdBad Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleFunds b i q)) z6)))))
--- N1 (Q-S6-4 (a)): a nullifier that the book has spent gives reject
--- with the reason reused.
-law def n1Reused : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (bkHas (itNf i) b) (inr unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome reused) :=
-  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (z : Path (Sum Unit Unit) (bkHas (itNf i) b) (inr unit)) =>
-    vdBad Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) (cong (fun (s : Sum Unit Unit) => sNot s) z)
--- S3: two quotes from one solver with equal open outputs give equal
--- verdicts.
-law def s3Quote : (p : Params) -> (b : Book) -> (i : Intent) -> (k : Key) -> (c : Certificate) -> (h : Height) -> (m : Sealed Amount) -> (n : Sealed Amount) -> Path Amount (open Amount m) (open Amount n) -> Path (Verdict Outcome) (settle p b i (quote m k) c h) (settle p b i (quote n k) c h) :=
-  fun (p : Params) (b : Book) (i : Intent) (k : Key) (c : Certificate) (h : Height) (m : Sealed Amount) (n : Sealed Amount) =>
-    elim (fun (s : Sealed Amount) => Path Amount (open Amount s) (open Amount n) -> Path (Verdict Outcome) (settle p b i (quote s k) c h) (settle p b i (quote n k) c h))
-      (fun (a : Amount) =>
-        elim (fun (t : Sealed Amount) => Path Amount a (open Amount t) -> Path (Verdict Outcome) (settle p b i (quote (seal Amount a) k) c h) (settle p b i (quote t k) c h))
-          (fun (e : Amount) (r : Path Amount a e) => cong (fun (x : Amount) => settle p b i (quote (seal Amount x) k) c h) r) n) m
--- The replay of design sec 5 (S7, Q-S7-6 (a)). vdThen A B v k gives
--- reject B w when v is reject A w, and k x when v is accept A x.
-def vdThen : (A : Type 0) -> (B : Type 0) -> Verdict A -> (A -> Verdict B) -> Verdict B :=
-  fun (A : Type 0) (B : Type 0) (v : Verdict A) (k : A -> Verdict B) =>
-    elim (fun (u : Verdict A) => Verdict B) (fun (x : A) => k x) (fun (w : Reason) => reject B w) v
--- bkZero is the book with no rows and no spent nullifiers. gsCur s h is
--- the Params in force for an entry at the height h: ssNext s when h is
--- above ssAt s, else ssCur s (G2).
-def bkZero : Book := book acNil spNil
-def gsCur : GovState -> Height -> Params :=
-  fun (s : GovState) (h : Height) =>
-    elim (fun (f : Sum Unit Unit) => Params) (fun (u : Unit) => ssNext s) (fun (u : Unit) => ssCur s) (htLe h (ssAt s))
--- gsPay t b is the transfer t on the book b: a debit of the payer and a
--- credit of the payee. gsBook n o b is the book after the outcome o of a
--- fill with the nullifier n: on settled, the two transfers and the spent
--- nullifier; on unfilled, the same book (Q-S7-5 (a)).
-def gsPay : Transfer -> Book -> Book :=
-  fun (t : Transfer) (b : Book) => bkCredit (trTo t) (trTok t) (trAmt t) (bkDebit (trFrom t) (trTok t) (trAmt t) b)
-def gsBook : Nullifier -> Outcome -> Book -> Book :=
-  fun (n : Nullifier) (o : Outcome) (b : Book) =>
-    elim (fun (u : Outcome) => Book) (fun (x : Transfer) (y : Transfer) => bkSpend n (gsPay y (gsPay x b))) b o
--- The four steps, each with the Params in force at the height h. A fill
--- is settle on the book. An amendment is govAmend; its result is the
--- next Params, in force from the height h + 1. A deposit is a credit. A
--- withdrawal needs a certificate on its statement (prT signatures, USER
--- ruling, S7 session 5), then the funds: a debit does not check them.
-def gsFill : GovState -> Intent -> Quote -> Certificate -> Height -> Verdict GovState :=
-  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
-    vdThen Outcome GovState (settle (gsCur s h) (ssBook s) i q c h)
-      (fun (o : Outcome) => accept GovState (govState (gsCur s h) (ssNext s) (ssAt s) (gsBook (itNf i) o (ssBook s))))
-def gsAmend : GovState -> Amendment -> Certificate -> Height -> Verdict GovState :=
-  fun (s : GovState) (a : Amendment) (c : Certificate) (h : Height) =>
-    vdThen Params GovState (govAmend (gsCur s h) a c h)
-      (fun (n : Params) => accept GovState (govState (gsCur s h) n h (ssBook s)))
-def gsDeposit : GovState -> Key -> Token -> Amount -> Height -> GovState :=
-  fun (s : GovState) (k : Key) (t : Token) (x : Amount) (h : Height) =>
-    govState (gsCur s h) (ssNext s) (ssAt s) (bkCredit k t x (ssBook s))
-def gsWithdraw : GovState -> Key -> Token -> Amount -> Certificate -> Height -> Verdict GovState :=
-  fun (s : GovState) (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) =>
-    vdCheck GovState (ctCheck (prMembers (gsCur s h)) (prT (gsCur s h)) (smWithdraw k t x h) c) badCert
-      (vdCheck GovState (bkCan k t x (ssBook s)) noFunds
-        (accept GovState (govState (gsCur s h) (ssNext s) (ssAt s) (bkDebit k t x (ssBook s)))))
--- govStep s e is the step of the replay. The name is govStep, because
--- step is a guest name (rule R4, USER ruling, S7 session 5).
-def govStep : GovState -> Entry -> Verdict GovState :=
-  fun (s : GovState) (e : Entry) =>
-    elim (fun (u : Entry) => Verdict GovState)
-      (fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => gsFill s i q c h)
-      (fun (a : Amendment) (c : Certificate) (h : Height) => gsAmend s a c h)
-      (fun (k : Key) (t : Token) (x : Amount) (h : Height) => accept GovState (gsDeposit s k t x h))
-      (fun (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) => gsWithdraw s k t x c h) e
--- rpGo l s is the replay of the log l from the state s: the first reject
--- rejects all (Q-S7-6 (a)). govReplay p l starts with the Params p, the
--- height 0 and the empty book. The name is govReplay, because replay is
--- a guest name (rule R4, USER ruling, S7 session 5).
-def rpGo : Log -> GovState -> Verdict GovState :=
-  fun (l : Log) =>
-    elim (fun (r : Log) => GovState -> Verdict GovState)
-      (fun (s : GovState) => accept GovState s)
-      (fun (e : Entry) (r : Log) (ih : GovState -> Verdict GovState) => fun (s : GovState) => vdThen GovState GovState (govStep s e) ih) l
-def govReplay : Params -> Log -> Verdict GovState :=
-  fun (p : Params) (l : Log) => rpGo l (govState p p htZero bkZero)
--- G1 (Q-S7-6 (a)): lgAmends l is the amendment entries of l. afStep s e
--- is gsAmend on an amendment entry and accept s on the other entries.
--- amendFold p l is the next Params of the fold of afStep over l.
-def lgAmends : Log -> Log :=
-  fun (l : Log) =>
-    elim (fun (r : Log) => Log) lgNil
-      (fun (e : Entry) (r : Log) (ih : Log) =>
-        elim (fun (u : Entry) => Log)
-          (fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => ih)
-          (fun (a : Amendment) (c : Certificate) (h : Height) => lgCons (enAmend a c h) ih)
-          (fun (k : Key) (t : Token) (x : Amount) (h : Height) => ih)
-          (fun (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) => ih) e) l
-def afStep : GovState -> Entry -> Verdict GovState :=
-  fun (s : GovState) (e : Entry) =>
-    elim (fun (u : Entry) => Verdict GovState)
-      (fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => accept GovState s)
-      (fun (a : Amendment) (c : Certificate) (h : Height) => gsAmend s a c h)
-      (fun (k : Key) (t : Token) (x : Amount) (h : Height) => accept GovState s)
-      (fun (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) => accept GovState s) e
-def afGo : Log -> GovState -> Verdict GovState :=
-  fun (l : Log) =>
-    elim (fun (r : Log) => GovState -> Verdict GovState)
-      (fun (s : GovState) => accept GovState s)
-      (fun (e : Entry) (r : Log) (ih : GovState -> Verdict GovState) => fun (s : GovState) => vdThen GovState GovState (afStep s e) ih) l
-def amendFold : Params -> Log -> Verdict Params :=
-  fun (p : Params) (l : Log) =>
-    vdThen GovState Params (afGo l (govState p p htZero bkZero)) (fun (s : GovState) => accept Params (ssNext s))
--- G1 (Q-S7-6 (a)): the replay of the amendment entries of a log gives
--- the same Params as the fold of govAmend over the log. g1Go is the
--- induction on the log. A fill, a deposit or a withdrawal entry drops
--- out on the two sides. On an amendment entry, a case on the verdict of
--- gsAmend: accept gives the step of the induction, reject gives refl.
-law def g1Go : (l : Log) -> (s : GovState) -> Path (Verdict GovState) (rpGo (lgAmends l) s) (afGo l s) :=
-  fun (l : Log) =>
-    elim (fun (r : Log) => (s : GovState) -> Path (Verdict GovState) (rpGo (lgAmends r) s) (afGo r s))
-      (fun (s : GovState) => refl)
-      (fun (e : Entry) (r : Log) (ih : (s : GovState) -> Path (Verdict GovState) (rpGo (lgAmends r) s) (afGo r s)) => fun (s : GovState) =>
-        elim (fun (u : Entry) => Path (Verdict GovState) (rpGo (lgAmends (lgCons u r)) s) (afGo (lgCons u r) s))
-          (fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => ih s)
-          (fun (a : Amendment) (c : Certificate) (h : Height) =>
-            elim (fun (v : Verdict GovState) => Path (Verdict GovState) (vdThen GovState GovState v (rpGo (lgAmends r))) (vdThen GovState GovState v (afGo r)))
-              (fun (t : GovState) => ih t)
-              (fun (w : Reason) => refl)
-              (gsAmend s a c h))
-          (fun (k : Key) (t : Token) (x : Amount) (h : Height) => ih s)
-          (fun (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) => ih s) e) l
-law def g1Fix : (p : Params) -> (l : Log) -> Path (Verdict Params) (vdThen GovState Params (govReplay p (lgAmends l)) (fun (s : GovState) => accept Params (ssNext s))) (amendFold p l) :=
-  fun (p : Params) (l : Log) =>
-    cong (fun (v : Verdict GovState) => vdThen GovState Params v (fun (s : GovState) => accept Params (ssNext s))) (g1Go l (govState p p htZero bkZero))
--- G2 (Q-S7-6 (a)): a fill at the height ssAt s (the height of the last
--- amendment) settles with the old Params ssCur s, by the height order.
-law def g2Cur : (s : GovState) -> Path Params (gsCur s (ssAt s)) (ssCur s) :=
-  fun (s : GovState) =>
-    cong (fun (f : Sum Unit Unit) => elim (fun (g : Sum Unit Unit) => Params) (fun (u : Unit) => ssNext s) (fun (u : Unit) => ssCur s) f) (htLeRefl (ssAt s))
-law def g2Same : (s : GovState) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> Path (Verdict GovState) (govStep s (enFill i q c (ssAt s))) (vdThen Outcome GovState (settle (ssCur s) (ssBook s) i q c (ssAt s)) (fun (o : Outcome) => accept GovState (govState (ssCur s) (ssNext s) (ssAt s) (gsBook (itNf i) o (ssBook s))))) :=
-  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) =>
-    cong (fun (p : Params) => vdThen Outcome GovState (settle p (ssBook s) i q c (ssAt s)) (fun (o : Outcome) => accept GovState (govState p (ssNext s) (ssAt s) (gsBook (itNf i) o (ssBook s))))) (g2Cur s)
--- G3 (Q-S7-6 (a)): each Params has t >= t_min (prFloor, by the type).
-law def g3Floor : (p : Params) -> Path (Sum Unit Unit) (htLe tMin (prT p)) (inr unit) :=
-  fun (p : Params) => prFloor p
--- N1 in the replay form (Q-S7-7 (a)): at a step of the replay, a fill
--- whose nullifier the book has spent gives reject with the reason
--- reused (one cong on n1Reused).
-law def n1Replay : (s : GovState) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (bkHas (itNf i) (ssBook s)) (inr unit) -> Path (Verdict GovState) (govStep s (enFill i q c h)) (reject GovState reused) :=
-  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (z : Path (Sum Unit Unit) (bkHas (itNf i) (ssBook s)) (inr unit)) =>
-    cong (fun (v : Verdict Outcome) => vdThen Outcome GovState v (fun (o : Outcome) => accept GovState (govState (gsCur s h) (ssNext s) (ssAt s) (gsBook (itNf i) o (ssBook s))))) (n1Reused (gsCur s h) (ssBook s) i q c h z)
 -- S8b: the field (USER ruling Q-S8b-3 (a)). An Fe is a 256-bit
 -- value in 8 Words, least significant first. The field ops keep a value in
 -- Montgomery form (x R mod m, R = 2^256). Each operand and each result is
@@ -1227,3 +667,1019 @@ def feInv : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => fePow md a (modE m
 -- fpMod). A value is an Fe in Montgomery form.
 def Fr : Type 0 := Fe
 def Fp : Type 0 := Fe
+-- S8b2 (USER ruling Q-S8b2-1 (a)): the BN254 group G1, y^2 = x^3 + 3 over
+-- Fp. A Pt1 is an affine point. Its coordinates are in Montgomery form. The
+-- point (0, 0) is the point at infinity (it is not on the curve). Each op
+-- takes the modulus md (fpMod for G1) and does the steps of bn254.c
+-- (quorum-lang src/crypto): ec0_jac_double, ec0_jac_add_affine,
+-- ec0_jac_affine and ec0_mul.
+family Pt1 := pt1 (ptX : Fe) (ptY : Fe)
+-- A Jac1 is a point (X, Y, Z) in Jacobian form: the affine point (X / Z^2,
+-- Y / Z^3). Z = 0 is the point at infinity.
+family Jac1 := jac1 (jcX : Fe) (jcY : Fe) (jcZ : Fe)
+-- A step count for the bit loop of ptMul (pc32 holds 32 steps).
+family PtCount := pcEnd | pcStep (pcNext : PtCount)
+def ptInf : Pt1 := pt1 feZero feZero
+def jcInf : Jac1 := jac1 feZero feZero feZero
+-- jcLet x k is k x, and ptLet x k is k x. Each binds one field value.
+def jcLet : Fe -> (Fe -> Jac1) -> Jac1 := fun (x : Fe) (k : Fe -> Jac1) => k x
+def ptLet : Fe -> (Fe -> Pt1) -> Pt1 := fun (x : Fe) (k : Fe -> Pt1) => k x
+-- ptIsInf p is inr unit when p is (0, 0).
+def ptIsInf : Pt1 -> Sum Unit Unit := fun (p : Pt1) => feAll (feIsZero (ptX p)) (fun (u : Unit) => feIsZero (ptY p))
+-- ptEq p q is inr unit when p and q have the same coordinates.
+def ptEq : Pt1 -> Pt1 -> Sum Unit Unit := fun (p : Pt1) (q : Pt1) => feAll (feEq (ptX p) (ptX q)) (fun (u : Unit) => feEq (ptY p) (ptY q))
+-- ptOnCurve md p is inr unit when each coordinate is less than the modulus
+-- and p is the point at infinity or y^2 = x^3 + 3. The constant 3 in
+-- Montgomery form is 3 times modR1 md.
+def ptOnCurve : FeMod -> Pt1 -> Sum Unit Unit :=
+  fun (md : FeMod) (p : Pt1) =>
+    feAll (feLt (ptX p) (modM md)) (fun (u : Unit) =>
+    feAll (feLt (ptY p) (modM md)) (fun (u1 : Unit) =>
+    either (fun (u2 : Unit) => feEq (feMul md (ptY p) (ptY p)) (feAdd md (feMul md (feMul md (ptX p) (ptX p)) (ptX p)) (feAdd md (feAdd md (modR1 md) (modR1 md)) (modR1 md))))
+      (fun (u2 : Unit) => feYes)
+      (ptIsInf p)))
+-- ptDbl md a is 2 a (ec0_jac_double): S = 4 X Y^2, M = 3 X^2, X3 = M^2 - 2 S,
+-- Y3 = M (S - X3) - 8 Y^4, Z3 = 2 Y Z. It is the point at infinity when Z = 0
+-- or Y = 0.
+def ptDbl : FeMod -> Jac1 -> Jac1 :=
+  fun (md : FeMod) (a : Jac1) =>
+    either (fun (u : Unit) =>
+      either (fun (u1 : Unit) =>
+        jcLet (feMul md (jcY a) (jcY a)) (fun (yy : Fe) =>
+        jcLet (feMul md (jcX a) yy) (fun (s1 : Fe) =>
+        jcLet (feAdd md s1 s1) (fun (s2 : Fe) =>
+        jcLet (feAdd md s2 s2) (fun (s : Fe) =>
+        jcLet (feMul md (jcX a) (jcX a)) (fun (xx : Fe) =>
+        jcLet (feAdd md (feAdd md xx xx) xx) (fun (mm : Fe) =>
+        jcLet (feSub md (feSub md (feMul md mm mm) s) s) (fun (x3 : Fe) =>
+        jcLet (feMul md yy yy) (fun (y4 : Fe) =>
+        jcLet (feAdd md y4 y4) (fun (y8a : Fe) =>
+        jcLet (feAdd md y8a y8a) (fun (y8b : Fe) =>
+        jcLet (feMul md (jcY a) (jcZ a)) (fun (yz : Fe) =>
+        jac1 x3 (feSub md (feMul md mm (feSub md s x3)) (feAdd md y8b y8b)) (feAdd md yz yz)))))))))))))
+      (fun (u1 : Unit) => jcInf)
+      (feIsZero (jcY a)))
+    (fun (u : Unit) => jcInf)
+    (feIsZero (jcZ a))
+-- ptMaddGen md a h s is the general case of ptMadd, with H = U - X and
+-- R = S - Y (here s) not 0: X3 = R^2 - H^3 - 2 X H^2,
+-- Y3 = R (X H^2 - X3) - Y H^3, Z3 = Z H.
+def ptMaddGen : FeMod -> Jac1 -> Fe -> Fe -> Jac1 :=
+  fun (md : FeMod) (a : Jac1) (h : Fe) (s : Fe) =>
+    jcLet (feMul md h h) (fun (hh : Fe) =>
+    jcLet (feMul md h hh) (fun (hhh : Fe) =>
+    jcLet (feMul md (jcX a) hh) (fun (v : Fe) =>
+    jcLet (feSub md (feSub md (feSub md (feMul md s s) hhh) v) v) (fun (x3 : Fe) =>
+    jac1 x3 (feSub md (feMul md s (feSub md v x3)) (feMul md (jcY a) hhh)) (feMul md (jcZ a) h)))))
+-- ptMadd md a b is a + b for the affine point b (ec0_jac_add_affine):
+-- U = b.x Z^2, S = b.y Z^3, H = U - X, R = S - Y. When H = 0, it is 2 a
+-- for R = 0, else the point at infinity.
+def ptMadd : FeMod -> Jac1 -> Pt1 -> Jac1 :=
+  fun (md : FeMod) (a : Jac1) (b : Pt1) =>
+    either (fun (u : Unit) =>
+      either (fun (u1 : Unit) =>
+        jcLet (feMul md (jcZ a) (jcZ a)) (fun (zz : Fe) =>
+        jcLet (feSub md (feMul md (ptX b) zz) (jcX a)) (fun (h : Fe) =>
+        jcLet (feSub md (feMul md (feMul md (ptY b) zz) (jcZ a)) (jcY a)) (fun (s : Fe) =>
+        either (fun (u2 : Unit) => ptMaddGen md a h s)
+          (fun (u2 : Unit) => either (fun (u3 : Unit) => jcInf) (fun (u3 : Unit) => ptDbl md a) (feIsZero s))
+          (feIsZero h)))))
+      (fun (u1 : Unit) => jac1 (ptX b) (ptY b) (modR1 md))
+      (feIsZero (jcZ a)))
+    (fun (u : Unit) => a)
+    (ptIsInf b)
+-- ptToAffine md a is (X / Z^2, Y / Z^3) with one inverse (ec0_jac_affine),
+-- and (0, 0) for Z = 0.
+def ptToAffine : FeMod -> Jac1 -> Pt1 :=
+  fun (md : FeMod) (a : Jac1) =>
+    either (fun (u : Unit) =>
+      ptLet (feInv md (jcZ a)) (fun (zi : Fe) =>
+      ptLet (feMul md zi zi) (fun (zi2 : Fe) =>
+      pt1 (feMul md (jcX a) zi2) (feMul md (jcY a) (feMul md zi2 zi)))))
+      (fun (u : Unit) => ptInf)
+      (feIsZero (jcZ a))
+-- ptBit md p x a is a + p when the top bit of x is 1, else a.
+def ptBit : FeMod -> Pt1 -> Word -> Jac1 -> Jac1 :=
+  fun (md : FeMod) (p : Pt1) (x : Word) (a : Jac1) => either (fun (u : Unit) => a) (fun (u : Unit) => ptMadd md a p) (wEq (wShr x 31w) 1w)
+-- ptMulWord md p c x a does one bit of the Word x for each step of c, the
+-- top bit first: it doubles a, and a 1 bit then adds p.
+def ptMulWord : FeMod -> Pt1 -> PtCount -> Word -> Jac1 -> Jac1 :=
+  fun (md : FeMod) (p : Pt1) (c : PtCount) => elim (fun (k : PtCount) => Word -> Jac1 -> Jac1)
+    (fun (x : Word) (a : Jac1) => a)
+    (fun (t : PtCount) (ih : Word -> Jac1 -> Jac1) => fun (x : Word) (a : Jac1) => ih (wShl x 1w) (ptBit md p x (ptDbl md a))) c
+def pc32 : PtCount := pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcStep (pcEnd))))))))))))))))))))))))))))))))
+-- ptMul md k p is k p for the 256 bits of the Fe k, the top bit first (ec0_mul;
+-- k is not reduced). It starts at the point at infinity.
+def ptMul : FeMod -> Fe -> Pt1 -> Pt1 :=
+  fun (md : FeMod) (k : Fe) (p : Pt1) =>
+    ptToAffine md (ptMulWord md p pc32 (fe0 k) (ptMulWord md p pc32 (fe1 k) (ptMulWord md p pc32 (fe2 k) (ptMulWord md p pc32 (fe3 k)
+      (ptMulWord md p pc32 (fe4 k) (ptMulWord md p pc32 (fe5 k) (ptMulWord md p pc32 (fe6 k) (ptMulWord md p pc32 (fe7 k) jcInf))))))))
+-- keccak-256 on Words (S8b2, Q-S8b-6 (a), Q-S8b2-11 (a)). A Lane is one
+-- 64-bit lane of the keccak state: lnLo holds bits 0 to 31 and lnHi holds
+-- bits 32 to 63. A KState holds the 25 lanes: lane x + 5 y is ks(x + 5 y).
+-- KRounds is the list of the round constants: keccakF is an elim over it.
+family Lane := lane (lnLo : Word) (lnHi : Word)
+family KState := kstate (ks0 : Lane) (ks1 : Lane) (ks2 : Lane) (ks3 : Lane) (ks4 : Lane) (ks5 : Lane) (ks6 : Lane) (ks7 : Lane) (ks8 : Lane) (ks9 : Lane) (ks10 : Lane) (ks11 : Lane) (ks12 : Lane) (ks13 : Lane) (ks14 : Lane) (ks15 : Lane) (ks16 : Lane) (ks17 : Lane) (ks18 : Lane) (ks19 : Lane) (ks20 : Lane) (ks21 : Lane) (ks22 : Lane) (ks23 : Lane) (ks24 : Lane)
+family KRounds := krEnd | krStep (krRc : Lane) (krNext : KRounds)
+def lnZero : Lane := lane 0w 0w
+def lnLet : Lane -> (Lane -> KState) -> KState := fun (a : Lane) (k : Lane -> KState) => k a
+def lnXor : Lane -> Lane -> Lane := fun (a : Lane) (b : Lane) => lane (wXor (lnLo a) (lnLo b)) (wXor (lnHi a) (lnHi b))
+-- lnChi a b c is a xor ((not b) and c).
+def lnChi : Lane -> Lane -> Lane -> Lane :=
+  fun (a : Lane) (b : Lane) (c : Lane) => lane (wXor (lnLo a) (wAnd (wNot (lnLo b)) (lnLo c))) (wXor (lnHi a) (wAnd (wNot (lnHi b)) (lnHi c)))
+-- lnRot a s t turns a left by s bits, with 0 < s < 32 and t = 32 - s.
+def lnRot : Lane -> Word -> Word -> Lane :=
+  fun (a : Lane) (s : Word) (t : Word) => lane (wOr (wShl (lnLo a) s) (wShr (lnHi a) t)) (wOr (wShl (lnHi a) s) (wShr (lnLo a) t))
+-- lnSwap a turns a left by 32 bits.
+def lnSwap : Lane -> Lane := fun (a : Lane) => lane (lnHi a) (lnLo a)
+-- lnCol a b c d e is the xor of the 5 lanes of one column.
+def lnCol : Lane -> Lane -> Lane -> Lane -> Lane -> Lane :=
+  fun (a : Lane) (b : Lane) (c : Lane) (d : Lane) (e : Lane) => lnXor (lnXor (lnXor (lnXor a b) c) d) e
+-- kfChi rc b0 .. b24 is the chi step on the lanes b (lane x + 5 y at b(x + 5 y)),
+-- then the iota step: lane 0 gets the xor of the round constant rc.
+def kfChi : Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> KState :=
+  fun (rc : Lane) (b0 : Lane) (b1 : Lane) (b2 : Lane) (b3 : Lane) (b4 : Lane) (b5 : Lane) (b6 : Lane) (b7 : Lane) (b8 : Lane) (b9 : Lane) (b10 : Lane) (b11 : Lane) (b12 : Lane) (b13 : Lane) (b14 : Lane) (b15 : Lane) (b16 : Lane) (b17 : Lane) (b18 : Lane) (b19 : Lane) (b20 : Lane) (b21 : Lane) (b22 : Lane) (b23 : Lane) (b24 : Lane) =>
+    kstate (lnXor (lnChi b0 b1 b2) rc) (lnChi b1 b2 b3) (lnChi b2 b3 b4) (lnChi b3 b4 b0) (lnChi b4 b0 b1)
+      (lnChi b5 b6 b7) (lnChi b6 b7 b8) (lnChi b7 b8 b9) (lnChi b8 b9 b5) (lnChi b9 b5 b6)
+      (lnChi b10 b11 b12) (lnChi b11 b12 b13) (lnChi b12 b13 b14) (lnChi b13 b14 b10) (lnChi b14 b10 b11)
+      (lnChi b15 b16 b17) (lnChi b16 b17 b18) (lnChi b17 b18 b19) (lnChi b18 b19 b15) (lnChi b19 b15 b16)
+      (lnChi b20 b21 b22) (lnChi b21 b22 b23) (lnChi b22 b23 b24) (lnChi b23 b24 b20) (lnChi b24 b20 b21)
+-- kfRound rc s is one round of keccak-f[1600] on s with the round constant rc.
+-- Theta: c0 .. c4 are the column xors, and d(x) = c(x - 1) xor (c(x + 1) turned
+-- left by 1). Rho and pi: lane X + 5 Y of b is lane x + 5 y of s xor d(x),
+-- turned left by the rho offset of (x, y), with x = X + 3 Y mod 5 and y = X.
+-- An offset n above 32 is lnSwap, then lnRot by n - 32.
+def kfRound : Lane -> KState -> KState :=
+  fun (rc : Lane) (s : KState) =>
+    lnLet (lnCol (ks0 s) (ks5 s) (ks10 s) (ks15 s) (ks20 s)) (fun (c0 : Lane) =>
+    lnLet (lnCol (ks1 s) (ks6 s) (ks11 s) (ks16 s) (ks21 s)) (fun (c1 : Lane) =>
+    lnLet (lnCol (ks2 s) (ks7 s) (ks12 s) (ks17 s) (ks22 s)) (fun (c2 : Lane) =>
+    lnLet (lnCol (ks3 s) (ks8 s) (ks13 s) (ks18 s) (ks23 s)) (fun (c3 : Lane) =>
+    lnLet (lnCol (ks4 s) (ks9 s) (ks14 s) (ks19 s) (ks24 s)) (fun (c4 : Lane) =>
+    lnLet (lnXor c4 (lnRot c1 1w 31w)) (fun (d0 : Lane) =>
+    lnLet (lnXor c0 (lnRot c2 1w 31w)) (fun (d1 : Lane) =>
+    lnLet (lnXor c1 (lnRot c3 1w 31w)) (fun (d2 : Lane) =>
+    lnLet (lnXor c2 (lnRot c4 1w 31w)) (fun (d3 : Lane) =>
+    lnLet (lnXor c3 (lnRot c0 1w 31w)) (fun (d4 : Lane) =>
+    kfChi rc (lnXor (ks0 s) d0) (lnRot (lnSwap (lnXor (ks6 s) d1)) 12w 20w) (lnRot (lnSwap (lnXor (ks12 s) d2)) 11w 21w)
+      (lnRot (lnXor (ks18 s) d3) 21w 11w) (lnRot (lnXor (ks24 s) d4) 14w 18w)
+      (lnRot (lnXor (ks3 s) d3) 28w 4w) (lnRot (lnXor (ks9 s) d4) 20w 12w) (lnRot (lnXor (ks10 s) d0) 3w 29w)
+      (lnRot (lnSwap (lnXor (ks16 s) d1)) 13w 19w) (lnRot (lnSwap (lnXor (ks22 s) d2)) 29w 3w)
+      (lnRot (lnXor (ks1 s) d1) 1w 31w) (lnRot (lnXor (ks7 s) d2) 6w 26w) (lnRot (lnXor (ks13 s) d3) 25w 7w)
+      (lnRot (lnXor (ks19 s) d4) 8w 24w) (lnRot (lnXor (ks20 s) d0) 18w 14w)
+      (lnRot (lnXor (ks4 s) d4) 27w 5w) (lnRot (lnSwap (lnXor (ks5 s) d0)) 4w 28w) (lnRot (lnXor (ks11 s) d1) 10w 22w)
+      (lnRot (lnXor (ks17 s) d2) 15w 17w) (lnRot (lnSwap (lnXor (ks23 s) d3)) 24w 8w)
+      (lnRot (lnSwap (lnXor (ks2 s) d2)) 30w 2w) (lnRot (lnSwap (lnXor (ks8 s) d3)) 23w 9w) (lnRot (lnSwap (lnXor (ks14 s) d4)) 7w 25w)
+      (lnRot (lnSwap (lnXor (ks15 s) d0)) 9w 23w) (lnRot (lnXor (ks21 s) d1) 2w 30w)))))))))))
+-- krAll is the 24 round constants of keccak-f[1600] (lane lo hi), the first round first.
+def krAll : KRounds :=
+  krStep (lane 0x00000001w 0x00000000w) (krStep (lane 0x00008082w 0x00000000w) (krStep (lane 0x0000808aw 0x80000000w) (krStep (lane 0x80008000w 0x80000000w)
+  (krStep (lane 0x0000808bw 0x00000000w) (krStep (lane 0x80000001w 0x00000000w) (krStep (lane 0x80008081w 0x80000000w) (krStep (lane 0x00008009w 0x80000000w)
+  (krStep (lane 0x0000008aw 0x00000000w) (krStep (lane 0x00000088w 0x00000000w) (krStep (lane 0x80008009w 0x00000000w) (krStep (lane 0x8000000aw 0x00000000w)
+  (krStep (lane 0x8000808bw 0x00000000w) (krStep (lane 0x0000008bw 0x80000000w) (krStep (lane 0x00008089w 0x80000000w) (krStep (lane 0x00008003w 0x80000000w)
+  (krStep (lane 0x00008002w 0x80000000w) (krStep (lane 0x00000080w 0x80000000w) (krStep (lane 0x0000800aw 0x00000000w) (krStep (lane 0x8000000aw 0x80000000w)
+  (krStep (lane 0x80008081w 0x80000000w) (krStep (lane 0x00008080w 0x80000000w) (krStep (lane 0x80000001w 0x00000000w) (krStep (lane 0x80008008w 0x80000000w)
+  krEnd)))))))))))))))))))))))
+-- kfRounds c s does one round on s for each constant of c, the first first.
+def kfRounds : KRounds -> KState -> KState :=
+  fun (c : KRounds) => elim (fun (k : KRounds) => KState -> KState)
+    (fun (s : KState) => s)
+    (fun (rc : Lane) (t : KRounds) (ih : KState -> KState) => fun (s : KState) => ih (kfRound rc s)) c
+def keccakF : KState -> KState := fun (s : KState) => kfRounds krAll s
+def ksZero : KState := kstate lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero
+-- kfAbsorb s m0 .. m16 puts one padded block (17 lanes, 136 bytes) into s,
+-- then does keccakF.
+def kfAbsorb : KState -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> Lane -> KState :=
+  fun (s : KState) (m0 : Lane) (m1 : Lane) (m2 : Lane) (m3 : Lane) (m4 : Lane) (m5 : Lane) (m6 : Lane) (m7 : Lane) (m8 : Lane) (m9 : Lane) (m10 : Lane) (m11 : Lane) (m12 : Lane) (m13 : Lane) (m14 : Lane) (m15 : Lane) (m16 : Lane) =>
+    keccakF (kstate (lnXor (ks0 s) m0) (lnXor (ks1 s) m1) (lnXor (ks2 s) m2) (lnXor (ks3 s) m3) (lnXor (ks4 s) m4)
+      (lnXor (ks5 s) m5) (lnXor (ks6 s) m6) (lnXor (ks7 s) m7) (lnXor (ks8 s) m8) (lnXor (ks9 s) m9)
+      (lnXor (ks10 s) m10) (lnXor (ks11 s) m11) (lnXor (ks12 s) m12) (lnXor (ks13 s) m13) (lnXor (ks14 s) m14)
+      (lnXor (ks15 s) m15) (lnXor (ks16 s) m16) (ks17 s) (ks18 s) (ks19 s) (ks20 s) (ks21 s) (ks22 s) (ks23 s) (ks24 s))
+-- kcBswap x turns the 4 bytes of x end to end.
+def kcBswap : Word -> Word := fun (x : Word) => wOr (wAnd (wRotl x 8w) 0x00ff00ffw) (wAnd (wRotr x 8w) 0xff00ff00w)
+-- kcLane a b is the lane of the 8 big-endian bytes of a, then b.
+def kcLane : Word -> Word -> Lane := fun (a : Word) (b : Word) => lane (kcBswap a) (kcBswap b)
+-- kcDigest s is the 32 bytes of lanes 0 to 3 of s as one big-endian number.
+def kcDigest : KState -> Fe :=
+  fun (s : KState) => fe (kcBswap (lnHi (ks3 s))) (kcBswap (lnLo (ks3 s))) (kcBswap (lnHi (ks2 s))) (kcBswap (lnLo (ks2 s)))
+    (kcBswap (lnHi (ks1 s))) (kcBswap (lnLo (ks1 s))) (kcBswap (lnHi (ks0 s))) (kcBswap (lnLo (ks0 s)))
+-- kcHash160 a b c d e is keccak256 of the 160 bytes of a .. e, each a 32-byte
+-- big-endian word (Q-S8b-6 (a)). The 2 blocks: lanes 0 to 15 are a .. d, lane 16
+-- is the first 8 bytes of e; then the last 24 bytes of e, the pad byte 0x01 at
+-- byte 24 and 0x80 at byte 135.
+def kcHash160 : Fe -> Fe -> Fe -> Fe -> Fe -> Fe :=
+  fun (a : Fe) (b : Fe) (c : Fe) (d : Fe) (e : Fe) =>
+    kcDigest (kfAbsorb (kfAbsorb ksZero (kcLane (fe7 a) (fe6 a)) (kcLane (fe5 a) (fe4 a)) (kcLane (fe3 a) (fe2 a)) (kcLane (fe1 a) (fe0 a))
+      (kcLane (fe7 b) (fe6 b)) (kcLane (fe5 b) (fe4 b)) (kcLane (fe3 b) (fe2 b)) (kcLane (fe1 b) (fe0 b))
+      (kcLane (fe7 c) (fe6 c)) (kcLane (fe5 c) (fe4 c)) (kcLane (fe3 c) (fe2 c)) (kcLane (fe1 c) (fe0 c))
+      (kcLane (fe7 d) (fe6 d)) (kcLane (fe5 d) (fe4 d)) (kcLane (fe3 d) (fe2 d)) (kcLane (fe1 d) (fe0 d))
+      (kcLane (fe7 e) (fe6 e)))
+      (kcLane (fe5 e) (fe4 e)) (kcLane (fe3 e) (fe2 e)) (kcLane (fe1 e) (fe0 e)) (lane 0x00000001w 0x00000000w)
+      lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero (lane 0x00000000w 0x80000000w))
+-- kcModR h is h mod r: h < 2^256 < 6 r, thus 5 conditional subtractions.
+def kcModR : Fe -> Fe :=
+  fun (h : Fe) => feCondSub (modM frMod) (feCondSub (modM frMod) (feCondSub (modM frMod) (feCondSub (modM frMod) (feCondSub (modM frMod) h))))
+-- kcChallenge rx ry px py m is the Schnorr challenge e = keccak256(R.x, R.y,
+-- P.x, P.y, m) mod r (Q-S8b-6 (a)). Each input is canonical (Q-S8b2-13 (a)),
+-- and e is canonical.
+def kcChallenge : Fe -> Fe -> Fe -> Fe -> Fe -> Fe :=
+  fun (rx : Fe) (ry : Fe) (px : Fe) (py : Fe) (m : Fe) => kcModR (kcHash160 rx ry px py m)
+-- S8b2 (Q-S8b-5 (a), Q-S8b2-15 (a) to Q-S8b2-17 (a)): the Poseidon
+-- permutation of circomlib on Fr: width 3, alpha 5, 8 full rounds (4 before
+-- and 4 after the partial rounds) and 57 partial rounds (the S-box on element
+-- 0 only). Each round adds the round constants, does the S-box x^5, and
+-- multiplies by the MDS matrix. The 195 round constants (psAll) and the 9 MDS
+-- values (psM00 to psM22) are in Montgomery form. gen/poseidon.c prints these
+-- 10 defs, and test/gate.sh compares the print with this file.
+family PState := pstate (ps0 : Fe) (ps1 : Fe) (ps2 : Fe)
+family PsRounds := prEnd | prFull (prFa : Fe) (prFb : Fe) (prFc : Fe) (prFNext : PsRounds) | prPart (prPa : Fe) (prPb : Fe) (prPc : Fe) (prPNext : PsRounds)
+def psM00 : Fe := fe 0x56fcf3d7w 0xf2e8909aw 0x45ed8c1dw 0x8019ce31w 0x28616418w 0xdda896a2w 0xffc885e1w 0x0e5ed723w
+def psM01 : Fe := fe 0xd66c0469w 0x3158f311w 0x69f040a0w 0x9511d96fw 0xb22127bfw 0xbc6996e5w 0xa7c9122aw 0x07e69e17w
+def psM02 : Fe := fe 0x169969b0w 0x28f45876w 0xe30a7649w 0x3d6ded69w 0x4c9b23ddw 0x79aed612w 0xffadf517w 0x03cf3048w
+def psM10 : Fe := fe 0x46474dd5w 0x670d8bd9w 0x0bf07baew 0x56daed80w 0xcca20e6dw 0x5c98d51ew 0xa18b0028w 0x1a3491edw
+def psM11 : Fe := fe 0x2ba79c47w 0xf0193e57w 0x6ee2dac5w 0x5fb2e46aw 0xb6ffb984w 0x6892f0d5w 0x49661413w 0x0df1dabdw
+def psM12 : Fe := fe 0xcaab272dw 0x3293bffcw 0xb11c4e1fw 0x85cbae38w 0xc8757b3cw 0x67208956w 0xb6c9d981w 0x17ca537aw
+def psM20 : Fe := fe 0xd2802757w 0xcc226561w 0x5bb9f4edw 0xfcfbd22fw 0xce2b8678w 0xc8ef58acw 0x1bae9c88w 0x05984bb4w
+def psM21 : Fe := fe 0x76bfeefdw 0x17561a51w 0x100061afw 0x1cd5d7bew 0xdce7646cw 0x714cefb2w 0xf2173fe9w 0x0043bf61w
+def psM22 : Fe := fe 0x1c729128w 0x4c72e3c5w 0x170d616cw 0xd35b9fd9w 0x4ab700a6w 0x4d095dc7w 0x6dc5d39bw 0x1282bdf7w
+def psAll : PsRounds :=
+  (prFull (fe 0x6534a858w 0x83bbbac3w 0x01250a07w 0x09716196w 0x0e23910cw 0x27a21905w 0xc8507442w 0x1638bf18w) (fe 0xbb25631aw 0x5e2bb0e6w 0xdef5875ew 0x56b042b8w 0xa8e9b451w 0x01bc3e10w 0x92ef1d7ew 0x17bfe160w) (fe 0x54508d89w 0xa4fef9b9w 0x4ee4c69ew 0xafeb6b7dw 0xfc301c39w 0xd8ebe8a7w 0x07ad780cw 0x1840976ew)
+  (prFull (fe 0xa04b72cbw 0x18b8e553w 0xec90df10w 0x4d654fb8w 0x9d1b9658w 0x3f8dafc3w 0x0e4e6a8aw 0x1a72c6a5w) (fe 0x12c7177aw 0x44f18fddw 0x520bd0eew 0x43d28a9bw 0x0192f008w 0x440b8313w 0x277b2fdew 0x13c53f3bw) (fe 0x9e33b756w 0xfc116b6cw 0x42eb5320w 0x933e67d0w 0xc9d9bdcfw 0xabc0d9f2w 0xabcb64b0w 0x23b0bd1fw)
+  (prFull (fe 0x535243afw 0xde8ebdf8w 0xb3d81387w 0x1e851377w 0xef127fb9w 0xdfa4b107w 0x9a042314w 0x1e12da83w) (fe 0xdd264f6bw 0xe25ff0a9w 0xd49d08b2w 0x0215e509w 0x42425093w 0xc2cf0935w 0x85cb02e0w 0x0baaf53dw) (fe 0x90cf8115w 0x6eaa462fw 0x21dd2e13w 0xaf07e5d2w 0xec88aa63w 0x9a0b65abw 0x624b262fw 0x1fcea175w)
+  (prFull (fe 0x4fe89c1ew 0x99aa70f0w 0x80826695w 0xdc11129dw 0xcc353aeew 0x1a68006fw 0xbe5d4996w 0x299ea7eaw) (fe 0xc5541138w 0x413df2c8w 0xc9de6bb3w 0xeb469618w 0xb76fe275w 0x1a668e52w 0x657d8da5w 0x0fed7116w) (fe 0x5911f6dfw 0x4c5cd408w 0x95ae98e6w 0xa69c3b9cw 0x93d19608w 0xf308d88cw 0xcffd5ad4w 0x079c79c9w)
+  (prPart (fe 0x115b6ae6w 0xdd5d50a6w 0x31994482w 0x3e2079cew 0x3142d7a6w 0x0beac0a9w 0x888323b4w 0x29838a07w) (fe 0x1bf4f9f8w 0x3031a7c2w 0x653a991aw 0xf093c1ccw 0x28aac7c2w 0x092a0cd1w 0xa7c4c266w 0x1e230e4aw) (fe 0x29407105w 0x2a72b06dw 0x48ac7771w 0x281dbf71w 0xbc22a44dw 0x175c5083w 0x7cf53b92w 0x08c91294w)
+  (prPart (fe 0x89ee3c2dw 0x7eb180a8w 0x86d44c8cw 0xd38343a9w 0x472b1d0ew 0x286bdbe0w 0x3117cc53w 0x24f6be20w) (fe 0x50b8eb66w 0xe2212295w 0xbfc796ebw 0x9ffe52faw 0xd361ed14w 0x1b9eef2ew 0xfa7034f4w 0x0c575104w) (fe 0x2a2e4643w 0xf9b28f84w 0xd2ca1317w 0x4d5c080bw 0x2c271eb9w 0xcd76ae81w 0x3b96e943w 0x0ea4878fw)
+  (prPart (fe 0xd7ee00cdw 0x1b12a0eaw 0x0d8acd32w 0x794461ecw 0xc75e20a7w 0x3abb3e24w 0x4f2c16dbw 0x27cb8585w) (fe 0x9e5c844aw 0xc34a0ce2w 0x98f23f61w 0xbae39001w 0x85e6d0c4w 0xf582e099w 0xa35cf2dew 0x055c6d26w) (fe 0x74f74c21w 0x33e1751fw 0x79f2ec1aw 0xdef83f52w 0x374490baw 0x3ce7d0bdw 0x42805119w 0x0eecc293w)
+  (prPart (fe 0x259d3e58w 0xe45772c6w 0xebeab683w 0x4c683f93w 0x07a4642ew 0xfb8c13b6w 0x3eeaed41w 0x2e3e8ef0w) (fe 0x630c5eb4w 0xd197c44cw 0x70186b79w 0x053857abw 0xbdb0d26aw 0x18ee44c7w 0x83a0557bw 0x18b94e25w) (fe 0x00acdc77w 0xd27736b0w 0x7cbcb7f5w 0x258b4b22w 0x269de616w 0x40df2e84w 0xc966b500w 0x209aa4bbw)
+  (prPart (fe 0x0720254fw 0x5aafe5dcw 0xf18d1016w 0x0e91a580w 0xf154d5b7w 0x11a00abfw 0x319b0d09w 0x28083140w) (fe 0xfd7f2bcaw 0x624ed13ew 0xf2c28b13w 0xcc9e53bcw 0xd885ccfaw 0x7ca39c04w 0x1ed0d643w 0x032c7e9cw) (fe 0x208c3258w 0xbee575acw 0x23790363w 0x8976d099w 0x9b58eaafw 0xeac3c4d3w 0xade6e3d5w 0x28585586w)
+  (prPart (fe 0x7c987248w 0x275e6492w 0x06381ce9w 0x10234533w 0xcb2159f6w 0xd90511a7w 0x59a4151bw 0x2997881aw) (fe 0x5b7ee005w 0x96ea7b64w 0x759a80d5w 0x12e49ee4w 0x0c7c209cw 0x3ff0710cw 0x5a29a973w 0x1207d4f6w) (fe 0xa943095fw 0x225570d6w 0x2d54aa69w 0xa11ab583w 0xdc72feacw 0x5ed544b9w 0x9fa0dfdew 0x16ba83b2w)
+  (prPart (fe 0x498f8347w 0xd35fe784w 0xdc5c310bw 0x448e2c74w 0x58df81d3w 0x8bc35d41w 0xb058a3b8w 0x11a01d27w) (fe 0x94af2d83w 0xcf4dac55w 0x8cc21243w 0xc6f6531bw 0x57b9548fw 0x6e65adc1w 0xf00d6dfbw 0x082a1067w) (fe 0x103a6dcfw 0x173fc30bw 0x98d301c3w 0xc91b63e4w 0x64eea1f2w 0xb8f7ea40w 0xd7df35e4w 0x06548827w)
+  (prPart (fe 0x66e91665w 0xf1dcdd18w 0x1bfcc76ew 0xaf44edb3w 0xbc5fdeb1w 0x69a2f851w 0xfd6847e5w 0x16a3add7w) (fe 0x69af0ab3w 0x277fa195w 0x21550cd3w 0x28e4a944w 0x1510def2w 0x8b1893dcw 0xf2e3b9afw 0x152b3eebw) (fe 0xde461743w 0x82a43eaaw 0x1a719bfdw 0x4bd30750w 0xf35fb5eaw 0x94e914f0w 0x7093f3ecw 0x2d45e6c0w)
+  (prPart (fe 0xcdec9d68w 0x1307c7dfw 0x9138f494w 0x569ed7dew 0x6374a0b6w 0x3345109cw 0x4b9d9fa1w 0x21b5a190w) (fe 0x09a98dc7w 0xeb775b59w 0x128a23bfw 0x54a57335w 0x88015162w 0x5b11e528w 0xd608fde8w 0x212a6cfdw) (fe 0x18d146f1w 0x4c04265fw 0xc7853d4ew 0x10d10bc4w 0xb14f2f2cw 0xa8e2a51dw 0x45106055w 0x0f5fd956w)
+  (prPart (fe 0xb51c37ddw 0x68dd43d7w 0x89e1d073w 0x1e464760w 0x8f805754w 0x58e04cf3w 0x8688b08bw 0x0b0bbf5bw) (fe 0x4122a309w 0x1b14f57cw 0x2e132548w 0xe0291357w 0x8b7c32dbw 0x8d3c1704w 0x616dbf37w 0x22434cd0w) (fe 0xa6154db8w 0xa0a5d482w 0xba422f45w 0xd1c8cb01w 0xe05a3d45w 0xb8a57919w 0x38af96cbw 0x285a24a2w)
+  (prPart (fe 0xfafbd364w 0x1aaa1405w 0x230034b7w 0xb8d8b685w 0x2fcc0854w 0x0b7aef99w 0x9f36af66w 0x28d85f4bw) (fe 0x2efde136w 0x21fc148dw 0x29eeb0a8w 0xc0a3008dw 0x6745a3c9w 0xf3914ca1w 0x36dd2341w 0x08565232w) (fe 0x12fbf9f3w 0xa14a3361w 0xa2eae970w 0xb1ff289bw 0xaf57f78dw 0x32a2feccw 0xc0267f6cw 0x003726ecw)
+  (prPart (fe 0x623a8231w 0x65e4051ew 0x48c406d3w 0x3de6d47dw 0xbdb8ead2w 0xa9bbd406w 0x9a165a0cw 0x0d600d15w) (fe 0x424d5e04w 0x50648febw 0xef267969w 0x78694de6w 0x0718f950w 0x5aa8b358w 0x05de9b70w 0x1b044d4ew) (fe 0xa8f4e119w 0x2a796e5ew 0xd739483aw 0x946bbb44w 0x2b7ff1bbw 0xe21604d2w 0x7869e663w 0x0c432702w)
+  (prPart (fe 0x15b09542w 0xe85e1176w 0x170967b3w 0x96ce582ew 0x0af36d54w 0x065b3984w 0x477f05b0w 0x11b11f0ew) (fe 0x4cb254bfw 0x0d74f099w 0xfc63bd6dw 0x4f4e4871w 0xebdad559w 0x89d7b727w 0x390eb822w 0x2cf20283w) (fe 0x23bdb058w 0xa30b5268w 0xf8eccd0dw 0x886bb7b6w 0xbc295914w 0x1f437e6dw 0xe6833325w 0x29ad2879w)
+  (prPart (fe 0x0fe43a5dw 0xec3b3941w 0xdcfa176aw 0x3fb9d90dw 0xa47556d0w 0x5fcaa229w 0x2e51b6d8w 0x07a58316w) (fe 0x0608396ew 0x5b3fe263w 0x2e954403w 0x1e449611w 0xa37c42a9w 0x855a9daaw 0xb4fa5128w 0x10f643f4w) (fe 0x04f98e35w 0x28590d00w 0xc2cc8cf6w 0xe13a159fw 0xbe68317aw 0x8d22be85w 0x8618db96w 0x085a637bw)
+  (prPart (fe 0x4188d4d5w 0x5588c695w 0x360f0373w 0x28bdcaedw 0x1974cf44w 0x67cc7a41w 0x2cc849acw 0x27ab756ew) (fe 0x088e99adw 0x32a0c18fw 0xdd9cc1f3w 0x22795c50w 0x6dc26a51w 0x39c0855cw 0x2e428a82w 0x12388febw) (fe 0x19cb859cw 0xaddbd56dw 0x9032fb62w 0x2f7ceda4w 0x874c459ew 0xebdf3719w 0xbc44149dw 0x036d7aa8w)
+  (prPart (fe 0x85b941c8w 0x2caa41d7w 0x154f2c6bw 0x971e4e4cw 0x68e0e6c8w 0x7874a8d4w 0x54f5d234w 0x07b4735dw) (fe 0xa044c8f2w 0x01f51a3aw 0xfcab2c29w 0x7a636b4bw 0xa96a00cew 0xb31eb377w 0x0bb104acw 0x0f0c53f0w) (fe 0x3e9566e7w 0xd7932800w 0x7d3074baw 0xed5f36c0w 0x0a9e4cb8w 0x8a2da6c6w 0x8f4c27c2w 0x28bd60c7w)
+  (prPart (fe 0x20631bbcw 0xfffebd87w 0x19d8aba5w 0x8efe2a42w 0x7ef1b62dw 0x6bdf4dedw 0x6d6cf68ew 0x1ff6c9e0w) (fe 0x57b8106dw 0x22a696d4w 0x5d4905f8w 0x8b98ffedw 0xbbef0232w 0x5edf9329w 0x46ea4c39w 0x1392824cw) (fe 0xf787c8a0w 0xab107cfew 0x07fb3230w 0x278e7c42w 0xe46d8256w 0x99b9ea6cw 0xfb31a00ew 0x0d682fd0w)
+  (prPart (fe 0xb11c850cw 0x4ecef90fw 0xc9eec3a9w 0x84e45781w 0xe2f1f4f8w 0x8ec25128w 0x12a70ccew 0x2a2c1a84w) (fe 0x332e2cc7w 0x8f369a4dw 0x34251590w 0xb22c5132w 0xb811231fw 0x706ac3aew 0x8ade8979w 0x19740e5ew) (fe 0x29f28b75w 0x221080f0w 0x74cb1e94w 0xa4374509w 0xc69f3da2w 0x87926f33w 0xee2ad166w 0x029cf616w)
+  (prPart (fe 0xee11e91dw 0x02442c4fw 0x7fdcbe17w 0x5dc410e0w 0xb63d9457w 0x1a867232w 0xb2782748w 0x1a1c9a07w) (fe 0xe474f114w 0x1edb82daw 0x735a0a00w 0xd3bc7df0w 0x280da899w 0x03b3817dw 0x517f4c79w 0x0701ed4fw) (fe 0x6bf08497w 0xe14d649aw 0xfba171b1w 0xa3ea3ec2w 0x65c736bdw 0x8f61083ew 0xf38c7ebbw 0x1ac1a9fdw)
+  (prPart (fe 0x74ef25d7w 0xcf491982w 0x1036644ew 0x562c05e0w 0x276e258cw 0x3f41976ew 0x194ef994w 0x1f5be530w) (fe 0x3b0c6560w 0x82c0529dw 0xcb3d788cw 0xce8537e7w 0x3bd8e8bcw 0x92494f9dw 0x3fd33e53w 0x132c81f4w) (fe 0x29cd3111w 0x3f40cc16w 0x8d257da8w 0xb9f9665bw 0xe8e16198w 0x185f61f8w 0xbd33ab21w 0x021adba7w)
+  (prPart (fe 0x3fd36130w 0x342f2a11w 0x349c530aw 0x9ceccbd5w 0x33444841w 0x617bd575w 0x33eee1d3w 0x1648cdf7w) (fe 0x827fcf73w 0x9efbd552w 0x6ab69375w 0xfaebeb1cw 0xbe8e88a8w 0x464172e7w 0x0d042c0fw 0x0847931ew) (fe 0x8a28dc6cw 0x12019364w 0xe7370526w 0x988a6302w 0x97474b0cw 0xa78edb0dw 0xa1b547faw 0x19959641w)
+  (prPart (fe 0x2427c2d2w 0x8e6dfb11w 0xe588e384w 0x20c25819w 0x30897cb6w 0x1d88377dw 0x73b9729aw 0x2a508af3w) (fe 0xddc51680w 0x1d14c873w 0x08009656w 0x0e0da869w 0x1340d6a4w 0xbf4ec9baw 0x5a0afb9cw 0x0098bdf6w) (fe 0xf3243e60w 0x50d73614w 0xe50c537ew 0x45209e69w 0xc759be13w 0xbf44d99fw 0x0724a583w 0x279f34dfw)
+  (prPart (fe 0x3c3aa682w 0x219cffe6w 0x425acf48w 0xa6dd59c7w 0xacccec8fw 0x444cb706w 0xff5b9dd4w 0x2e8c17dew) (fe 0x36bf5d0bw 0x9997c914w 0x677678bew 0x1629fb48w 0xdb9eb29aw 0x49c4d97bw 0xdaa0d61ew 0x2035dd09w) (fe 0x8e51546bw 0x10168e7cw 0x6ab22d0cw 0x507ec151w 0xa4bf09c0w 0x1a194fcaw 0x6849f4fdw 0x0c637dc8w)
+  (prPart (fe 0x1ea6f531w 0x57fe0469w 0x353d037bw 0x2190682ew 0xe904d3b9w 0x72e47ef9w 0xfb3c75edw 0x211f475dw) (fe 0x503617d0w 0x7e838b86w 0x8ae1955ew 0xe6bad194w 0xd5b30483w 0x707e58faw 0x2b764b31w 0x0a097298w) (fe 0xfc34185cw 0x03bb8a08w 0x4d810bfdw 0x7697ad2dw 0xc816f501w 0xfd12136fw 0x88279b56w 0x120d076cw)
+  (prPart (fe 0xeb22800cw 0xee24105ew 0x82283d5ew 0xb7cbe7afw 0x8cd71bb5w 0x6191e1e3w 0x91efd9a9w 0x1aeaf2e4w) (fe 0x8cc9237aw 0xa04e0701w 0x3151e0b6w 0x5361733bw 0x8ddf97c3w 0x40e61ee3w 0xf8b30fd4w 0x227af916w) (fe 0x1dbc8729w 0x3a89c212w 0xd8db1a87w 0xbc8fbdb3w 0x8d840b86w 0xe86e48afw 0x0acf31c8w 0x2ce7a4cbw)
+  (prPart (fe 0xdc3af464w 0x5034a090w 0x617008aaw 0x6ed46f82w 0xd819f7e3w 0x358e71ffw 0xe116e13bw 0x26c8080aw) (fe 0xb8b52e37w 0x788952cfw 0xe7fb7fbcw 0xefc72a5bw 0x9459447aw 0xc77bac4fw 0x8a6d261ew 0x001040afw) (fe 0xd2ff7426w 0x16e6d600w 0xacfc9401w 0xca5f5816w 0x9a0e0072w 0xe38beefew 0x1a7bc331w 0x21938b19w)
+  (prPart (fe 0xa21f9297w 0xd5b44d21w 0xaa7d0743w 0x86167973w 0x50d4e54fw 0x79bd6f45w 0xac6940caw 0x03cfdb40w) (fe 0xd69d55fcw 0x9c929ba1w 0x151271aew 0x87d64dfcw 0x9fac9536w 0x2d27e317w 0x9101e879w 0x1a90b4dfw) (fe 0xc0ebe7ecw 0x7499664fw 0x84931303w 0x09716f8ew 0x94634b45w 0x4cc0dccbw 0x8519e33cw 0x1a32f5ffw)
+  (prPart (fe 0x3b9bcaa9w 0x870877b7w 0x75379e4fw 0x1881870fw 0x51a7e672w 0x9f3f06e4w 0xb41dcb29w 0x1151fe3bw) (fe 0x1cac0430w 0x0b7cb1a8w 0x441f88f9w 0x271f481cw 0x984a6294w 0xeda16949w 0x043bb91cw 0x073cc8few) (fe 0x348cbfe4w 0x5d4c4bfew 0x476c9489w 0xcfd654c4w 0xf0b1efcdw 0xdd48f53cw 0x69621011w 0x06c975eaw)
+  (prPart (fe 0x184c9024w 0x39fb6c74w 0xa143fe21w 0x80e79b39w 0x9d48cbfcw 0xb1253d50w 0x8c52124dw 0x1a4900bew) (fe 0x4d51b5c0w 0x190a59d1w 0xd8bdb73aw 0xa444e21aw 0xfe061798w 0xb2259807w 0xbfcf2f6aw 0x271a2e9bw) (fe 0x96417133w 0xc0af13dcw 0x9c88420dw 0x1cb1c897w 0x73b9f841w 0x353f8e56w 0x18ce1183w 0x0ad28748w)
+  (prPart (fe 0xfd0f7d29w 0x5eae10d5w 0xeaa853e4w 0x7da0cc2bw 0xd2a3b6e2w 0xb844b04aw 0x40c038eew 0x0b184f0bw) (fe 0xb1d54591w 0xe5e995b4w 0xb12e5099w 0x19548f28w 0xf40f1c72w 0xe0da5976w 0x2d014456w 0x1c55359dw) (fe 0x5f6f87d8w 0x68c41146w 0xc980c957w 0xa3a18882w 0x4fabcf20w 0x5c79518cw 0x97bc5cb3w 0x26edc294w)
+  (prPart (fe 0x948b6732w 0xb50f63c3w 0x1ae1dbb4w 0x9c160bd7w 0x5abff66aw 0x24cfd938w 0xeced9ea6w 0x02063a7cw) (fe 0xd22245b0w 0xdb0cbc35w 0x55232e6dw 0xfe86319aw 0xf3add538w 0x6105fbfdw 0x38d94255w 0x2c2dc27cw) (fe 0x8a8c8995w 0xf1895d98w 0x0c1b5a82w 0xdedefbadw 0x0bd416d8w 0x5f3fb8bcw 0x21d78dc2w 0x0e2a4c7dw)
+  (prPart (fe 0xb87cd518w 0x72f59f40w 0x2d8b3ee3w 0x619b20e0w 0xf7d9329fw 0xd6ebb896w 0x6141dd3aw 0x211c1fdfw) (fe 0x4f54c992w 0xd6e372c6w 0xf785abe0w 0x99827b2bw 0x4fbeae14w 0xb67492d9w 0x915f1cb7w 0x0288174aw) (fe 0x1a4ad1c5w 0x0cee8960w 0xd570e8b4w 0x66dee7acw 0x5471fc2cw 0x237331b2w 0x068020d0w 0x0f79a3dcw)
+  (prPart (fe 0x8f31bc12w 0x898fee0bw 0x2da1961cw 0x5c8954aaw 0xc3da12afw 0x77326678w 0x7a7f389fw 0x14431321w) (fe 0xd3b4864aw 0x05f342caw 0x0656a010w 0xe2c7d39dw 0xda62a23fw 0x61b8bef5w 0x7b6696efw 0x195806adw) (fe 0x0cbdef02w 0x76c6fbf5w 0x5a6b40f4w 0xf535ea97w 0x3fe86bcew 0x0c5fe238w 0x4b8688b9w 0x117abeb3w)
+  (prPart (fe 0x32e35924w 0x722fcd91w 0x2fa40665w 0x8d991c0fw 0xa33bc385w 0xab060365w 0x5f2060aaw 0x0b61468dw) (fe 0x8f1be22aw 0xf37de77aw 0x7577781ew 0x427159a9w 0x266148d9w 0x14e99813w 0x0e5be0c4w 0x138e8d0fw) (fe 0xc9bb6fc7w 0xe1543733w 0x35e21c8cw 0xd8c97045w 0x82de438cw 0xd433edc2w 0xf81b3763w 0x11466ae0w)
+  (prPart (fe 0x39524874w 0x2cbd8cdbw 0x4afce00ew 0xf9855b64w 0xabfbd66cw 0xb290cb62w 0xb1084494w 0x25acd478w) (fe 0xb41dcee8w 0x8ebc6672w 0x849196a1w 0x606f0745w 0xbd88d82aw 0xe55ae090w 0x4167249dw 0x00947055w) (fe 0xc7a6418bw 0x062094bcw 0x8583c637w 0x2803495bw 0x7437c010w 0x53eb48b9w 0xe9138165w 0x0c7a1222w)
+  (prPart (fe 0x36018a4ew 0x27eab79cw 0xd0c4068dw 0xbd1864c1w 0x25a237e3w 0xf902113aw 0xeb1e9c1fw 0x128d87abw) (fe 0xf7652d14w 0xdb7fc417w 0xaac09e67w 0x58bd4f3aw 0x4d60e85cw 0x728f5866w 0xb96fdda0w 0x0f85a634w) (fe 0xe302eadcw 0xe32fe000w 0x3c7df083w 0x7d23c3ddw 0xb443a012w 0x5bd45107w 0x28d1a73cw 0x2acca274w)
+  (prPart (fe 0x10944264w 0xbf727dedw 0xe7df1f42w 0x4ebf249fw 0x5448317cw 0x9ae7e1eaw 0x386f06d1w 0x098478d1w) (fe 0xb62c6d90w 0x41702faew 0x5d31eda6w 0x5dea6056w 0xf362ec45w 0x99144c98w 0x48f73f04w 0x0666d886w) (fe 0x199d699cw 0x83b3ca7ew 0xc43d5f81w 0x32ebc3b0w 0x1a1d5f6bw 0x14a61eddw 0xa1103978w 0x2cb5c8few)
+  (prPart (fe 0x54a68bc4w 0x5d05e3aew 0x3460a6f2w 0x4faa9d46w 0x074f3aafw 0x7f3ed5cdw 0xdae67de3w 0x2d280f20w) (fe 0x6dada240w 0xd2efe4caw 0x91e6e450w 0x85c3424cw 0xe819912fw 0x67ded928w 0x15ad187ew 0x2a471101w) (fe 0x325914baw 0xfd689c88w 0xc4f678a8w 0x217ccba0w 0xcaac332bw 0x775c3aa0w 0xadb3dc0bw 0x0237eeffw)
+  (prPart (fe 0x0d48ab5aw 0x951cba23w 0x6f7dcd80w 0xac60fef5w 0x667a107aw 0xee0e118cw 0x12abebebw 0x286963dew) (fe 0x37545102w 0xd5bf474cw 0x24a7bbf7w 0x8df02107w 0xd06cee5cw 0x2869e00fw 0xe9679a80w 0x10a5a9a9w) (fe 0xa7c1fc31w 0xb756d548w 0xec937a72w 0x91a8ff87w 0x337e9900w 0xc052832fw 0x975226c0w 0x0529844aw)
+  (prPart (fe 0xea723ea7w 0xd6bd6219w 0x47a73dbcw 0xb15ef75aw 0xbcdba423w 0xce0d24f3w 0x0b75da95w 0x00f2c9c0w) (fe 0x3934561bw 0x8839b8e4w 0x997614afw 0xeed5c479w 0xe37ec975w 0x8e13af4cw 0x1a0da7d1w 0x1c11b138w) (fe 0x1b52a70dw 0xf3890322w 0x5616f0b4w 0x57941badw 0xc24d695aw 0x79e0e60aw 0x4dc51202w 0x28196a6ew)
+  (prPart (fe 0x3dd24eb6w 0x064ebe0cw 0xfeb04f9dw 0x3802fd84w 0x907fa843w 0x86b2d2b0w 0x86c617aaw 0x2c574ff6w) (fe 0xd26b3c37w 0x4350bfc9w 0x582555a7w 0x21c07f7cw 0x39e61d98w 0xc26f0a1aw 0x20773885w 0x23e04b5bw) (fe 0x1c4960f1w 0x9ecdf080w 0xaa5c29bdw 0x90455ea0w 0xa78bbda6w 0x7a4f7128w 0x00068a14w 0x08a72f22w)
+  (prPart (fe 0x55561239w 0x8e784230w 0xb6a9b0c3w 0xc68657f8w 0x3e9a9859w 0x3c1f3002w 0x957c386bw 0x020a5307w) (fe 0xdf413870w 0xc2b2ec89w 0x6a3cbfa5w 0x69841764w 0x08e46241w 0x85b88d31w 0xcd3c1731w 0x1153cf64w) (fe 0x1b1facfdw 0xd3c742f4w 0xce5600d8w 0x48cc11f7w 0x25ad06caw 0xd924a204w 0xb64a36f0w 0x2b92d896w)
+  (prPart (fe 0x16232e80w 0x47e3641ew 0xf4118ce6w 0xb5b83d38w 0x8e9fe957w 0x9c757d81w 0x849b01ecw 0x0f040021w) (fe 0x39709602w 0xbf3cd76ew 0xf717615fw 0xe2d93e6cw 0xaa4aa483w 0x4e5f8607w 0x64ae4e31w 0x1fcceb22w) (fe 0x437a38d9w 0xcad7b25fw 0x43bd617aw 0xf66dcd47w 0xca985f41w 0x75627910w 0x53a27827w 0x1c2d9622w)
+  (prPart (fe 0x994cce65w 0x3eca0791w 0x7e8476d9w 0x059234b1w 0x92adc262w 0x8403f0cdw 0x4c9f73b9w 0x2116c524w) (fe 0xece065e3w 0x7ebcbcd0w 0xa0139ff9w 0xc1a06905w 0xeafcce74w 0xf0e0a214w 0x4bb3f1adw 0x102221a2w) (fe 0xfd0793c6w 0xc73946d2w 0xa7714ca9w 0xd684e968w 0x56a0baddw 0x45168926w 0x69bcf7e8w 0x2bb1a1d7w)
+  (prPart (fe 0x7b52e3c9w 0x6b45148dw 0xdf8c0734w 0x030bfb6ew 0x8edd38c4w 0x78374b44w 0x46a5b689w 0x05ba2d1fw) (fe 0x2bca34d6w 0x96a85006w 0x3852014ew 0x1af76c92w 0xfda5d027w 0xad93ce5cw 0x1ab3d348w 0x1c592cafw) (fe 0xf0bb4932w 0xafbb1743w 0x0bda8c0cw 0x6a7696e1w 0x609bf58ew 0x07a07831w 0x98271115w 0x2d35e805w)
+  (prPart (fe 0xfdafcabcw 0xdc24c33fw 0x331852d4w 0xf4dd4a38w 0xc97e8d89w 0x5ed1b79aw 0xa8d2fa83w 0x07fcc7dcw) (fe 0x4d1b83f0w 0xe4104100w 0x3497d06aw 0x09933bdbw 0x0bbdd441w 0xa3a26810w 0xccf638f4w 0x2dacd4f6w) (fe 0xe281e4e9w 0x41e818ccw 0x4c9f0b3cw 0xdacb05daw 0x97123b9ew 0x9c98e807w 0x71cf9893w 0x05c27851w)
+  (prPart (fe 0x661dd3efw 0x8bb70713w 0xe1e866e4w 0xa3219b41w 0x94dbafcbw 0x4841aeaew 0x5b343c2ew 0x1f04ab07w) (fe 0xda1ed4d8w 0x09877b99w 0xbb562ab7w 0x3e1b13bew 0xbc796707w 0xfd0a453aw 0x8fe542b6w 0x1b08caf1w) (fe 0x35ed4ddbw 0x8772776cw 0x6dca8f20w 0xd1e483c4w 0xece3cb77w 0x3d6ef5b0w 0xac3cdedaw 0x04350d60w)
+  (prPart (fe 0x2dfd828dw 0xd59789d5w 0xc7c66b69w 0xd0d4f5c7w 0xb5309734w 0x4184bf91w 0x81137365w 0x0e09deddw) (fe 0x6730c5cew 0x3c46a5adw 0xda525007w 0x5c7bd37bw 0x0a707411w 0xd57d1e17w 0x21197bddw 0x13e189b5w) (fe 0xf304a26fw 0xa6343ee1w 0xd2ba7228w 0xca33c793w 0x00d4d448w 0x25dad125w 0x25852c46w 0x09cf8276w)
+  (prPart (fe 0xc63a54d9w 0x797a8602w 0x3aa0e827w 0x1ac2bc43w 0x580b7789w 0x7c3fbe7fw 0xb882d894w 0x03174635w) (fe 0x318908d8w 0x4f16dab5w 0x9bb33e9bw 0x618709aew 0x1fcccdb9w 0x79f6ce9dw 0x663e5559w 0x2a42c258w) (fe 0x8db85bedw 0x9352c66fw 0x91216ae2w 0xf76a6cfcw 0xab6ddebaw 0xecadbbeew 0x019acbefw 0x0501860dw)
+  (prPart (fe 0x9b633beaw 0x33bbf755w 0x36c8c252w 0x59bc392cw 0x80b1aebcw 0x13a0563ew 0x0663b761w 0x15fa9768w) (fe 0x7ce56662w 0xd34b76ccw 0x52f0c797w 0x46375620w 0x92d6f09ew 0x121bc992w 0x552ddc2dw 0x0a694fcew) (fe 0x8e961db5w 0x2c91b8dfw 0xf14b5eb8w 0xe0847837w 0x600b988aw 0xdfa9bfc0w 0xa2dd61ecw 0x0e88c05fw)
+  (prPart (fe 0xd1594ed2w 0x062b0126w 0x9360c8f3w 0xf6b8ef94w 0x681f9b19w 0x88685c33w 0xdc6147f2w 0x057ca2cew) (fe 0x7d1d6988w 0xbc4cb823w 0xc02628edw 0x40a88f0aw 0xd686d929w 0x38d89898w 0xb0515c31w 0x2333cd11w) (fe 0x673208b5w 0xb242031fw 0xf309ec58w 0x144ef3dfw 0xe4dc599fw 0x74d56678w 0x804984efw 0x2ca99301w)
+  (prPart (fe 0x33a4bed1w 0x5131dba2w 0xd8400bacw 0x8a8e1b36w 0x65901cd2w 0x21e59e88w 0xf3fab0a5w 0x0e5c8ec6w) (fe 0x88edc047w 0x2a4bb5fdw 0xc68d0c2aw 0x5b86f3ebw 0x5688b04fw 0x54882f2aw 0x507cbe33w 0x05a94e75w) (fe 0xf8ecdb92w 0x2b1caac2w 0xdee0c00dw 0x1fc9ccb8w 0x3676a1fcw 0x132b98f9w 0x479088d2w 0x26683390w)
+  (prPart (fe 0x6512589dw 0x35366d72w 0x9132d200w 0x1a3e6b99w 0x6782aa42w 0xde087c49w 0x4d53dd00w 0x19bd0fcbw) (fe 0xec6c0762w 0x047cb750w 0x5dabb47bw 0x24d6a46ew 0x1ba14cabw 0xc919256cw 0x8c4b62c4w 0x273396a7w) (fe 0x57687d8ew 0xf0b98c2bw 0x2063365ew 0x80147c91w 0x91ba1607w 0x59b461eaw 0x0c32ff50w 0x28c3fc15w)
+  (prPart (fe 0x3d434232w 0xf5eccf1cw 0xdd3d1536w 0x473330d9w 0xc46d86b2w 0xade583c6w 0x1ec58e70w 0x2c598c96w) (fe 0x0def6797w 0x03b80016w 0xa943177ew 0xc4cf4ab9w 0xc1588f3cw 0xcde7b62aw 0x51cf7c34w 0x06eecbd0w) (fe 0x3c6bd1fdw 0x0369b258w 0x76d43177w 0x0dbdc1a0w 0xadcedd3dw 0xcb0dd179w 0x470abd29w 0x0bbe0370w)
+  (prPart (fe 0x70a500c7w 0x7cef46f5w 0x7ae0671ew 0xd5c89d2bw 0xe25b5d5dw 0x32a472d2w 0x6430cd10w 0x1819574aw) (fe 0xf2113dc2w 0x6f7de7d7w 0xe26494ccw 0x9bad7676w 0x4f7cb546w 0x59b77b7bw 0x096c1e37w 0x2624ebddw) (fe 0xfca66b49w 0x11a5cdddw 0x4debebe3w 0x768bcc29w 0x7fbfda18w 0x852080c8w 0x19b633eew 0x1c7d91a6w)
+  (prPart (fe 0x8145efadw 0xaae5e35dw 0xe0bbe5f3w 0xce1d50caw 0xb2134e9fw 0x36970cefw 0x43c46cfew 0x1280d615w) (fe 0x6b5468c6w 0xbaaef2d3w 0x859e85a0w 0x498f7febw 0xef131eacw 0xfbbe4f4fw 0xbfd3b824w 0x0b321fd2w) (fe 0xfb1b7a9aw 0x73cf2dd7w 0xe4c46704w 0xfa91136dw 0xd0a4ef08w 0x7477293dw 0x1e0c4760w 0x1b2e2f42w)
+  (prPart (fe 0xdb788bf2w 0xb4af5805w 0x90ce9257w 0x4c066541w 0x862b0413w 0x3c0942bew 0xecb1ffdcw 0x19358aa7w) (fe 0xbe6e42d5w 0x1a5f2289w 0xc40d8a7aw 0xb8558e89w 0xd417290aw 0x6db403e0w 0x84359369w 0x0df8c12dw) (fe 0x8fa50e7bw 0x2c162337w 0x8676a013w 0x334709d3w 0xeb1a23e8w 0x424966dfw 0x4aee75c8w 0x13f728b8w)
+  (prFull (fe 0xbda25f34w 0x58cf088ew 0xc20a05fcw 0x7a5d6a37w 0x8ef2478fw 0xc3e67e0ew 0x13041154w 0x28cf15d8w) (fe 0x60e26854w 0xcd9b3716w 0xbde7c2a5w 0xa798e006w 0x8f0cde4ew 0xa589cbbfw 0xe6654fc6w 0x0cc83461w) (fe 0x1cf08b7aw 0x5aa5df88w 0x86b10afaw 0x854536b6w 0xcbaf9ae0w 0x54fbdc7aw 0x2b131883w 0x2267e579w)
+  (prFull (fe 0x73d40313w 0x6800c906w 0x065355bbw 0x370cc2bew 0x98b894c4w 0x48b361afw 0xf2d5da4dw 0x1574397ew) (fe 0x193ce68cw 0x980463e7w 0x1a4abf45w 0xae87dc9dw 0xf99cdb5ew 0x038a72f6w 0x2a8f168cw 0x169da4f5w) (fe 0x34683bb9w 0xc837d645w 0x57898b12w 0xa1c5ad47w 0xa3d9aa3fw 0xc4eb6597w 0xe930629aw 0x10551f64w)
+  (prFull (fe 0x3fa3dfdaw 0xc276f1f2w 0x0f4e390fw 0x07be179dw 0xf6a7932dw 0xef2cc368w 0x256ea6c8w 0x169888fdw) (fe 0x9fdb4920w 0x0933f9e6w 0xcb552ac2w 0x757798d2w 0xaff8a6e8w 0x44617531w 0xae439deew 0x1c88dc66w) (fe 0x219d011aw 0x84d6faa1w 0x3f57d413w 0x6c621fc7w 0xbd78cbf4w 0x06661776w 0xac57478dw 0x0d40569ew)
+  (prFull (fe 0x33746490w 0x65a764cbw 0x6d3d133bw 0xd857618bw 0xbcb82d7cw 0x597d95e1w 0x5b250c0dw 0x1999b22aw) (fe 0xed0f55ebw 0x09913f64w 0xb1d49b95w 0x71f4b894w 0x9782046bw 0xe64f2d86w 0x3b362aaaw 0x2ac51c6dw) (fe 0xf3864524w 0x4e1f1fb6w 0x2734a295w 0x183aa6e5w 0x414a772dw 0x7a585dc7w 0xb2e96900w 0x0e2e7f46w)
+  prEnd)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+-- psFe x k is k x. It binds one field value.
+def psFe : Fe -> (Fe -> Fe) -> Fe := fun (x : Fe) (k : Fe -> Fe) => k x
+-- psPow5 mul x is x^5 by 3 products.
+def psPow5 : (Fe -> Fe -> Fe) -> Fe -> Fe :=
+  fun (mul : Fe -> Fe -> Fe) (x : Fe) => psFe (mul x x) (fun (x2 : Fe) => psFe (mul x2 x2) (fun (x4 : Fe) => mul x4 x))
+-- psRow mul m0 m1 m2 a b c is m0 a + m1 b + m2 c.
+def psRow : (Fe -> Fe -> Fe) -> Fe -> Fe -> Fe -> Fe -> Fe -> Fe -> Fe :=
+  fun (mul : Fe -> Fe -> Fe) (m0 : Fe) (m1 : Fe) (m2 : Fe) (a : Fe) (b : Fe) (c : Fe) => feAdd frMod (feAdd frMod (mul m0 a) (mul m1 b)) (mul m2 c)
+-- psMix mul a b c is the MDS product of (a, b, c).
+def psMix : (Fe -> Fe -> Fe) -> Fe -> Fe -> Fe -> PState :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fe) (b : Fe) (c : Fe) => pstate (psRow mul psM00 psM01 psM02 a b c) (psRow mul psM10 psM11 psM12 a b c) (psRow mul psM20 psM21 psM22 a b c)
+-- psFull mul a b c s is one full round on s with the round constants a, b, c.
+def psFull : (Fe -> Fe -> Fe) -> Fe -> Fe -> Fe -> PState -> PState :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fe) (b : Fe) (c : Fe) (s : PState) =>
+    psMix mul (psPow5 mul (feAdd frMod (ps0 s) a)) (psPow5 mul (feAdd frMod (ps1 s) b)) (psPow5 mul (feAdd frMod (ps2 s) c))
+-- psPart mul a b c s is one partial round: the S-box on element 0 only.
+def psPart : (Fe -> Fe -> Fe) -> Fe -> Fe -> Fe -> PState -> PState :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fe) (b : Fe) (c : Fe) (s : PState) =>
+    psMix mul (psPow5 mul (feAdd frMod (ps0 s) a)) (feAdd frMod (ps1 s) b) (feAdd frMod (ps2 s) c)
+-- psRounds mul c s does one round on s for each node of c, the first first.
+def psRounds : (Fe -> Fe -> Fe) -> PsRounds -> PState -> PState :=
+  fun (mul : Fe -> Fe -> Fe) (c : PsRounds) => elim (fun (k : PsRounds) => PState -> PState)
+    (fun (s : PState) => s)
+    (fun (a : Fe) (b : Fe) (d : Fe) (t : PsRounds) (ih : PState -> PState) => fun (s : PState) => ih (psFull mul a b d s))
+    (fun (a : Fe) (b : Fe) (d : Fe) (t : PsRounds) (ih : PState -> PState) => fun (s : PState) => ih (psPart mul a b d s)) c
+-- psPerm mul s is the permutation of s. s and the result are in Montgomery form.
+def psPerm : (Fe -> Fe -> Fe) -> PState -> PState := fun (mul : Fe -> Fe -> Fe) (s : PState) => psRounds mul psAll s
+-- psMulC is the native product feMulC (Q-S8b-4 (a)). psMulG is the guest
+-- feMul, the specification (Q-S8b2-15 (a)).
+def psMulC : Fe -> Fe -> Fe := fun (a : Fe) (b : Fe) => feMulC frMod a b
+def psMulG : Fe -> Fe -> Fe := fun (a : Fe) (b : Fe) => feMul frMod a b
+-- psHash2 mul a b is element 0 of the permutation of (0, a, b). a, b and the
+-- result are canonical (Q-S8b2-16 (a)): the product by R^2 puts a value in
+-- Montgomery form, and the product by 1 takes it out.
+def psHash2 : (Fe -> Fe -> Fe) -> Fe -> Fe -> Fe :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fe) (b : Fe) => mul (ps0 (psPerm mul (pstate feZero (mul a (modR2 frMod)) (mul b (modR2 frMod))))) feOne
+-- poseidon2 a b is psHash2 with the native product.
+def poseidon2 : Fe -> Fe -> Fe := fun (a : Fe) (b : Fe) => psHash2 psMulC a b
+-- S8b2 (Q-S8b-6 (a), Q-S8b2-3 (a), Q-S8b2-5 (a), Q-S8b2-6 (a), Q-S8b2-20
+-- (a), Q-S8b2-21 (a)): the Schnorr check on BN254 G1 and the message words.
+-- A Hash holds a canonical Fr.
+family Hash := hash (hsVal : Fr)
+-- natWord c n gives the low bits of n, one bit for each step of the PtCount
+-- list c (Q-S8b2-24 (a)): bit 0 of n, then natWord of natDiv n 2 one place
+-- up. pc32 gives n mod 2^32.
+def natWord : PtCount -> Nat -> Word := fun (c : PtCount) => elim (fun (k : PtCount) => Nat -> Word)
+  (fun (n : Nat) => 0w)
+  (fun (t : PtCount) (ih : Nat -> Word) => fun (n : Nat) => wOr (flagIf (natEq (natMod n 2) 1) 1w 0w) (wShl (ih (natDiv n 2)) 1w)) c
+-- natToFr n is kcModR of the 256-bit value of n, a canonical Fr
+-- (Q-S8b2-24 (a)). A Nat of the evaluator is less than 2^64, thus limbs 2 to
+-- 7 are 0. Limb 1 is natWord of n divided by 2^16 two times.
+def natToFr : Nat -> Fe := fun (n : Nat) => kcModR (fe (natWord pc32 n) (natWord pc32 (natDiv (natDiv n 65536) 65536)) 0w 0w 0w 0w 0w 0w)
+-- amToFr a and htToFr h give the unary value as a canonical Fr (the value is
+-- less than r). Each step adds 1.
+def amToFr : Amount -> Fe := fun (a : Amount) => elim (fun (b : Amount) => Fe) feZero (fun (p : Amount) (ih : Fe) => feAdd frMod ih feOne) a
+def htToFr : Height -> Fe := fun (h : Height) => elim (fun (g : Height) => Fe) feZero (fun (p : Height) (ih : Fe) => feAdd frMod ih feOne) h
+-- scOut md a takes the Montgomery value a out (feMulC by 1, Q-S8b2-21 (a)).
+def scOut : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => feMulC md a feOne
+-- msWord, msKey, msWithdraw and msIntent call poseidon2C (Q-S8b2-29 (b)).
+-- msWord t x y is poseidon2(t, poseidon2(x, y)) (Q-S8b-5 (a)).
+def msWord : Fe -> Fe -> Fe -> Fe := fun (t : Fe) (x : Fe) (y : Fe) => poseidon2C t (poseidon2C x y)
+-- msKey p is poseidon2(x mod r, y mod r) of the canonical coordinates of p.
+-- p is less than 2 r, thus one conditional subtraction gives the value mod r.
+def msKey : Pt1 -> Fe := fun (p : Pt1) => poseidon2C (feCondSub (modM frMod) (scOut fpMod (ptX p))) (feCondSub (modM frMod) (scOut fpMod (ptY p)))
+-- The message words of Q-S8b2-3 (a): tag 0 fill, 1 amend, 2 withdraw, 3 intent.
+def msFill : Fe -> Fe -> Fe := fun (nf : Fe) (h : Fe) => msWord feZero nf h
+def msAmend : Fe -> Fe -> Fe := fun (root : Fe) (h : Fe) => msWord feOne root h
+def msWithdraw : Pt1 -> Fe -> Fe -> Fe -> Fe := fun (p : Pt1) (tok : Fe) (amt : Fe) (h : Fe) => msWord (fe 2w 0w 0w 0w 0w 0w 0w 0w) (msKey p) (poseidon2C tok (poseidon2C amt h))
+-- msIntent nf tin tout st ws wl dl (Q-S8b2-25 (a)): tag 3 on nf and the
+-- right-nested chain of the two tokens, the start amount, the window (the
+-- two stored fields winStart, winLenPred) and the deadline.
+def msIntent : Fe -> Fe -> Fe -> Fe -> Fe -> Fe -> Fe -> Fe := fun (nf : Fe) (tin : Fe) (tout : Fe) (st : Fe) (ws : Fe) (wl : Fe) (dl : Fe) => msWord (fe 3w 0w 0w 0w 0w 0w 0w 0w) nf (poseidon2C tin (poseidon2C tout (poseidon2C st (poseidon2C ws (poseidon2C wl dl)))))
+-- g1Gen is the generator (1, 2) in Montgomery form: R mod p and 2 R mod p.
+def g1Gen : Pt1 := pt1 (modR1 fpMod) (feAdd fpMod (modR1 fpMod) (modR1 fpMod))
+-- scValid p r s (Q-S8b2-6 (a)) says no when P or R is off the curve, P is
+-- the point at infinity, or s is not less than r.
+def scValid : Pt1 -> Pt1 -> Fe -> Sum Unit Unit := fun (p : Pt1) (r : Pt1) (s : Fe) => sAnd (ptOnCurve fpMod p) (sAnd (sNot (ptIsInf p)) (sAnd (ptOnCurve fpMod r) (feLt s (modM frMod))))
+-- scJacEq a j says yes when the affine a and the Jacobian j are the same
+-- point: Z = 0 and a at infinity, or a finite and X = x Z^2, Y = y Z^3.
+def scJacEq : Pt1 -> Jac1 -> Sum Unit Unit := fun (a : Pt1) (j : Jac1) =>
+  elim (fun (b : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => sAnd (sNot (ptIsInf a)) (sAnd (feEq (jcX j) (feMulC fpMod (ptX a) (feMulC fpMod (jcZ j) (jcZ j)))) (feEq (jcY j) (feMulC fpMod (ptY a) (feMulC fpMod (jcZ j) (feMulC fpMod (jcZ j) (jcZ j))))))) (fun (u : Unit) => ptIsInf a) (feIsZero (jcZ j))
+-- scEquation p r s e says yes when s G = R + e P (two ptMulC, no feInv).
+def scEquation : Pt1 -> Pt1 -> Fe -> Fe -> Sum Unit Unit := fun (p : Pt1) (r : Pt1) (s : Fe) (e : Fe) => scJacEq (ptMulC fpMod s g1Gen) (ptMadd fpMod (ptMadd fpMod jcInf r) (ptMulC fpMod e p))
+-- schnorrCheck p r s m: e = keccak256(R.x, R.y, P.x, P.y, m) mod r on the
+-- canonical values (Q-S8b2-13 (a)). The equation runs only when scValid says
+-- yes, thus a bad input costs no ptMulC.
+def schnorrCheck : Pt1 -> Pt1 -> Fe -> Fe -> Sum Unit Unit := fun (p : Pt1) (r : Pt1) (s : Fe) (m : Fe) =>
+  elim (fun (b : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inl unit) (fun (u : Unit) => scEquation p r s (kcChallenge (scOut fpMod (ptX r)) (scOut fpMod (ptY r)) (scOut fpMod (ptX p)) (scOut fpMod (ptY p)) m)) (scValid p r s)
+-- @FIX@ begin
+-- The Schnorr fixtures (S8b2, Q-S8b2-4 (a), Q-S8b2-22 (a)). Do not edit this
+-- block: `cryptotool fixtures` prints it, and test/gate.sh compares the two.
+-- fxKeyN = n G. fxMN R and fxMN S are the signature by key N on message M:
+-- Amend = msAmend 9 3, Fill = msFill 1 2, Intent = msIntent of intentA,
+-- WdOne, WdThree, WdFour, WdSix = msWithdraw fxKey1 1 of (3, 1), (3, 3),
+-- (3, 4), (6, 1).
+def fxKey1 : Pt1 := pt1 (fe 0xc58f0d9dw 0xd35d438dw 0xf5c70b3dw 0x0a78eb28w 0x7879462cw 0x666ea36fw 0x9a07df2fw 0x0e0a77c1w) (fe 0x8b1e1b3aw 0xa6ba871bw 0xeb8e167bw 0x14f1d651w 0xf0f28c58w 0xccdd46dew 0x340fbe5ew 0x1c14ef83w)
+def fxKey2 : Pt1 := pt1 (fe 0xc3e7ea38w 0xe10460b6w 0x438e5469w 0xbc0b548bw 0x0c0ac2ecw 0xc2822db4w 0x098d014dw 0x13227397w) (fe 0xd87cfd47w 0x3c208c16w 0x6871ca8dw 0x97816a91w 0x8181585dw 0xb85045b6w 0xe131a029w 0x04644e72w)
+def fxKey3 : Pt1 := pt1 (fe 0x248b11a0w 0x9d831b4ew 0x77f54b7ew 0x91f18c06w 0xbfda15d0w 0x0ee5ea95w 0x28c70539w 0x10f0baf6w) (fe 0x983653eaw 0xbe1523eaw 0x7c629a1aw 0xe86e4817w 0x6d2a214aw 0x51cc9f8ew 0xca757913w 0x014925f0w)
+def fxKey4 : Pt1 := pt1 (fe 0x71564d86w 0x5febee19w 0x48120e83w 0x58acacf1w 0xea1d74aaw 0xca2c0c38w 0x7818ff2dw 0x26447b1bw) (fe 0xd28ad82ew 0xdc555f35w 0x2b81a952w 0xe6396513w 0x9161afaew 0x68817cc1w 0x6627e4e0w 0x2a9a7eacw)
+def fxKey7 : Pt1 := pt1 (fe 0x94f0ffe6w 0x882e46acw 0x693b6115w 0xd02031ebw 0x7cd0a083w 0xc4b97370w 0x2a8b2ebdw 0x101a055aw) (fe 0x9f1f130fw 0x44ec06f1w 0xc49fbc8cw 0x0aaade75w 0x298fbeccw 0x83fe42fdw 0x99e23d8cw 0x1c91e3d2w)
+def fxKey9 : Pt1 := pt1 (fe 0x9a3b0d6fw 0x7f28c143w 0x56901316w 0x4f8d03ddw 0x7719e6a8w 0xb497e746w 0x8c9625f8w 0x0e2717c4w) (fe 0xa5db1c17w 0xb57c36e6w 0x504546a6w 0x6ec31f11w 0xe6538064w 0x10efdd4bw 0xe9557921w 0x1a2aa21aw)
+def fxAmend1R : Pt1 := pt1 (fe 0x61ddc948w 0xe7d86f7ew 0x201a2a7aw 0xaa4da7e1w 0x88364696w 0x0525dae1w 0x21128336w 0x004c191bw) (fe 0xb320b988w 0x66ceb1c3w 0x00206868w 0xa55a8612w 0xdbc22349w 0xef3a42c0w 0x52b9814bw 0x0641e0c8w)
+def fxAmend1S : Fr := fe 0x21652cb4w 0x55ef8719w 0xbfd533c7w 0x46478b2dw 0x464fb4e3w 0xa46928c6w 0x94b42bd9w 0x046614fcw
+def fxAmend2R : Pt1 := pt1 (fe 0xaf192042w 0x1096e4f9w 0xc05ffceew 0x770e3428w 0x9ab053fbw 0xcabf3368w 0xee5d6f78w 0x29261aa4w) (fe 0xe9733fabw 0xcbf5928bw 0x4a154620w 0x8b354376w 0x6018fe61w 0xe592077ew 0xbfb55152w 0x0c5d62d9w)
+def fxAmend2S : Fr := fe 0x6a5c1f2bw 0x7089546bw 0xe0b1f2abw 0xb2d35befw 0x7d0ed885w 0xe031cd65w 0xa60ba4cdw 0x22535c0ew
+def fxFill3R : Pt1 := pt1 (fe 0x7e6c956fw 0xbc2834e7w 0x329b2ba0w 0x15e3c435w 0xaa2d9d77w 0x7744015cw 0x320208bcw 0x24443fc4w) (fe 0x9eff5369w 0xcb39b9d3w 0x4efebcecw 0x6a99e2f1w 0xe990e02dw 0x5ec72e43w 0x8bb6c765w 0x22441dbfw)
+def fxFill3S : Fr := fe 0x2d38a822w 0xe9773047w 0x61d7bee4w 0x9d50b52fw 0x71d891a6w 0xb27336ecw 0x7364d6e0w 0x2a9f5c9bw
+def fxFill4R : Pt1 := pt1 (fe 0x897983d3w 0xd6e95d62w 0xeed01361w 0x7dd7c381w 0xe7536a42w 0xe2309185w 0x5c75b395w 0x2715463fw) (fe 0x2c899c9bw 0xe87938a2w 0x20a4ee89w 0xca97dc92w 0xe3c71472w 0x3721b3f5w 0x783beeefw 0x16e0e7dcw)
+def fxFill4S : Fr := fe 0x3b65a110w 0x635ca7aaw 0x78b10bf9w 0x50553d7aw 0x05a38952w 0xf05b5a9dw 0xaf2e1aa6w 0x12a0d152w
+def fxIntent7R : Pt1 := pt1 (fe 0x5fcd054cw 0x7a232dc9w 0x2c506b58w 0x302b6d4fw 0xe7bf0453w 0x96d7dfa8w 0x18603692w 0x0393e1d1w) (fe 0xaa6b018ew 0x6ed36982w 0x3391550dw 0xa243c0bbw 0x780484e6w 0xf06aaf12w 0x7c01df05w 0x1a7db13cw)
+def fxIntent7S : Fr := fe 0x6cf763e3w 0x3445907cw 0x9c407a4ew 0xe194bc94w 0xf18c78few 0xa4b246a7w 0xd1f2896ew 0x2ca1ae5aw
+def fxWdOne1R : Pt1 := pt1 (fe 0x356edacdw 0xafdac2f2w 0x7fe7cb95w 0x91b2616dw 0xdec7d24dw 0xd8fa5d75w 0xb0f98d0fw 0x2a2bcbe2w) (fe 0xf8ff45cdw 0xabf9447cw 0x73f3c9fbw 0xbd73c357w 0x7dc9f0a8w 0xd8befd55w 0x72644c2dw 0x09749272w)
+def fxWdOne1S : Fr := fe 0x0b851e1bw 0x082cbf9bw 0x4196bda1w 0x4d455fc6w 0xf927eb56w 0x46e66766w 0x0bc86ba6w 0x07c14d6fw
+def fxWdOne2R : Pt1 := pt1 (fe 0x786bf176w 0x6046d753w 0xebf6d953w 0xc94c4a73w 0x74379673w 0x4499f17ew 0xb60f8b49w 0x0fb7ae12w) (fe 0x8da0a017w 0x86ea7b4aw 0x47e0f859w 0x44e1b2dew 0xf28b030cw 0x735732f6w 0x351f7913w 0x18869654w)
+def fxWdOne2S : Fr := fe 0x9780b303w 0x590bb8c7w 0xee5f0204w 0x0c55f3ecw 0xccca56c8w 0x27253db9w 0x670e7818w 0x205a59aaw
+def fxWdThree1R : Pt1 := pt1 (fe 0x03599844w 0xd93fb8d0w 0xb1466f9cw 0xa22bbf2cw 0xef4d43d7w 0x4d3a637aw 0x52f5ba47w 0x0d59ab9cw) (fe 0x955ef053w 0x06aab21fw 0x37198530w 0x3f00d096w 0x49a5b434w 0x63b0543bw 0x904b9ee5w 0x1c8781ddw)
+def fxWdThree1S : Fr := fe 0x5abf0685w 0x576d915ew 0xe7df058fw 0xc30397e1w 0x13d5c180w 0x1598b1baw 0x517c6fc8w 0x2cafa961w
+def fxWdThree2R : Pt1 := pt1 (fe 0x652d9441w 0x190e0034w 0x2941c3e1w 0x31debc6ew 0x671f46d5w 0x6614d0bfw 0xf9e678cew 0x0d91a27dw) (fe 0x0b7e8ba4w 0xdd859f9aw 0xa1c59b75w 0x6c2c2fe4w 0x1858209dw 0xfe0d2b9dw 0x4e9cbf4dw 0x073d336fw)
+def fxWdThree2S : Fr := fe 0x1e3b4407w 0x30822041w 0x7fe9495bw 0xec4dce0aw 0xb244fc79w 0xfe74c512w 0x2dae2637w 0x25e5b9afw
+def fxWdFour1R : Pt1 := pt1 (fe 0x36ab9381w 0x818c505cw 0xeb0d6a2bw 0xf70c92bcw 0x1db6e098w 0x37a48748w 0x6d9f8365w 0x1ce728f1w) (fe 0x890ca814w 0x8f9d07cdw 0x73c3920dw 0x3d9eb035w 0x8c34ee23w 0x856e4119w 0x549dd683w 0x01d0f928w)
+def fxWdFour1S : Fr := fe 0x3a5d0d64w 0x7bee7457w 0x0844b6f7w 0xb6c4aa78w 0xe29b298aw 0x14451e08w 0x643d9dc1w 0x1b599af0w
+def fxWdFour2R : Pt1 := pt1 (fe 0xf4f304ddw 0x642b5862w 0xb200a122w 0x8bd32f8aw 0x061ea993w 0x52f99c6dw 0x530eb2a0w 0x16f61c81w) (fe 0x188e7531w 0x41751848w 0xde42a6ebw 0x66adb353w 0xad58323ew 0x039792f2w 0x51c94ab1w 0x0703ad5fw)
+def fxWdFour2S : Fr := fe 0x4536ae7cw 0xf943f3a3w 0xe1506a40w 0x7c421afaw 0x865680a0w 0x63c90681w 0xb9d2b924w 0x2eba6009w
+def fxWdSix1R : Pt1 := pt1 (fe 0x672a2eeew 0xe542af85w 0xc7c317cbw 0x79459460w 0x2190a9f0w 0xac37f4e6w 0xffd1b4d0w 0x2e43ba78w) (fe 0xb2bb27daw 0xaeadd9faw 0x012ac875w 0x26084a1fw 0x2f9d87c8w 0x8dc88b66w 0xf1eb8c09w 0x0227af7ew)
+def fxWdSix1S : Fr := fe 0x317ca17ew 0x629e3671w 0xd74daee5w 0x5f6293c6w 0xcabdff6bw 0x636dc468w 0x8407d707w 0x0575f33ew
+def fxWdSix2R : Pt1 := pt1 (fe 0xd1cf9d72w 0x4f71f4a2w 0x5f44e3eew 0x30b06124w 0x4210f900w 0xe98af80aw 0xb3ba7ae7w 0x2d5ea22dw) (fe 0x723e1a52w 0x3caf8c51w 0xedc42ddaw 0x8b81d65ew 0xdeeb40bcw 0x51fffc61w 0x93c497c4w 0x2728eacaw)
+def fxWdSix2S : Fr := fe 0x9d7b0d9bw 0x108ce2a7w 0xdf0a0209w 0xd92360f2w 0x87dc9643w 0xcba266dcw 0xbc4ca1faw 0x2d2baa9fw
+-- @FIX@ end
+-- The token and the nullifier: one constructor over Nat each. tkEq and
+-- nfEq are the equality words (inr unit is "equal").
+family Token := token (tokId : Nat)
+def tkEq : Token -> Token -> Sum Unit Unit :=
+  fun (a : Token) (b : Token) => elim (fun (u : Token) => Sum Unit Unit)
+    (fun (i : Nat) => elim (fun (v : Token) => Sum Unit Unit)
+      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
+family Nullifier := nullifier (nfId : Nat)
+def nfEq : Nullifier -> Nullifier -> Sum Unit Unit :=
+  fun (a : Nullifier) (b : Nullifier) => elim (fun (u : Nullifier) => Sum Unit Unit)
+    (fun (i : Nat) => elim (fun (v : Nullifier) => Sum Unit Unit)
+      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
+-- The opaque types (design sec 3): one constructor over Nat each. Their
+-- equality words come with the slice that needs them (S6, S7); Hash comes
+-- at S8b.
+-- Key and Sig (Q-S8b-6 (a), S8b2): a key holds the point P of G1, and a
+-- signature holds the Schnorr pair (R, s).
+family Key := key (keyPt : Pt1)
+family Sig := sig (sigR : Pt1) (sigS : Fr)
+family Commitment := commitment (cmtId : Nat)
+family Root := root (rootId : Nat)
+-- The swap of design sec 4 (S6). Intent, Quote, Transfer and Fill are
+-- records: a family with one constructor, so each field is a projection.
+-- A domain field name is global (rule R4), so each field name has the
+-- prefix of its record. A program reads an Amount or Height field of a
+-- record parameter at its width (Q-S6-1 (a)) and a Window field of a
+-- record parameter at the Window widths (Q-S6-2 (a)). The decoy index is
+-- a Sealed Height (OI-6).
+family Intent := intent (itInTok : Token) (itOutTok : Token) (itAmtIn : Sealed Amount) (itMinOut : Sealed Amount) (itDecoy : Sealed Height) (itStartOut : Amount) (itWindow : Window) (itDeadline : Height) (itNf : Nullifier) (itOwner : Key) (itSig : Sig)
+family Quote := quote (qtOut : Sealed Amount) (qtSolver : Key)
+family Transfer := transfer (trTok : Token) (trAmt : Amount) (trFrom : Key) (trTo : Key)
+family Fill := fill (flIntent : Intent) (flQuote : Quote) (flLegIn : Transfer) (flLegOut : Transfer) (flHeight : Height)
+-- The reasons of a rejected settle. S6 uses reused, expired, badPair,
+-- badProof and belowFloor. badCert, belowTMin, badPrice and noFunds come
+-- with S7, badShare with S8b.
+family Reason := badProof | badShare | expired | reused | badPair | belowFloor | badCert | belowTMin | badPrice | noFunds
+-- A verdict is accept with a value or reject with a reason. The value
+-- field is vdVal, because vdOk is the name of a law of S6.
+family Verdict (A : Type 0) := accept (vdVal : A) | reject (vdWhy : Reason)
+-- The outcome of a settle is two transfers. unfilled comes with the replay
+-- of S7.
+family Outcome := settled (stIn : Transfer) (stOut : Transfer) | unfilled
+-- The spent nullifiers: the spent field of the Book of S7 (Q-S6-6 (a), Q-S7-5 (a)).
+family Spent := spNil | spCons (spHead : Nullifier) (spTail : Spent)
+-- vdCheck A s w v is v when s says yes, else reject A w.
+def vdCheck : (A : Type 0) -> Sum Unit Unit -> Reason -> Verdict A -> Verdict A :=
+  fun (A : Type 0) (s : Sum Unit Unit) (w : Reason) (v : Verdict A) =>
+    elim (fun (k : Sum Unit Unit) => Verdict A) (fun (u : Unit) => reject A w) (fun (u : Unit) => v) s
+-- spHas n l says yes when the nullifier n is in l.
+def spHas : Nullifier -> Spent -> Sum Unit Unit :=
+  fun (n : Nullifier) (l : Spent) =>
+    elim (fun (k : Spent) => Sum Unit Unit) (inl unit) (fun (g : Nullifier) (t : Spent) (ih : Sum Unit Unit) => sOr (nfEq n g) ih) l
+-- sgVrf k g m says yes when the signature g is from the key k on the
+-- message m: the Schnorr check (Q-S8b-6 (a), Q-S8b2-2 (a)). sgVrf calls the
+-- C builtin schnorrCheckC; the guest schnorrCheck is the specification
+-- (Q-S8b2-36 (a)).
+def sgVrf : Key -> Sig -> Fe -> Sum Unit Unit :=
+  fun (k : Key) (g : Sig) (m : Fe) => elim (fun (u : Key) => Sum Unit Unit)
+    (fun (p : Pt1) => elim (fun (v : Sig) => Sum Unit Unit)
+      (fun (r : Pt1) (s : Fr) => schnorrCheckC p r s m) g) k
+-- encMap2 (Q-S6-3 (a)) maps a word with two arguments over two sealed
+-- values: encBind on the first value, encMap on the second value.
+def encMap2 : (A : Type 0) -> (B : Type 0) -> (C : Type 0) -> (A -> B -> C) -> Sealed A -> Sealed B -> Sealed C :=
+  fun (A : Type 0) (B : Type 0) (C : Type 0) (g : A -> B -> C) (m : Sealed A) (n : Sealed B) =>
+    encBind A C m (fun (a : A) => encMap B C (fun (b : B) => g a b) n)
+-- wClamp w h is the height h clamped into [wStart w, wStart w + wLen w].
+def wClamp : Window -> Height -> Height :=
+  fun (w : Window) (h : Height) =>
+    htSelect Height h (wStart w) (wStart w)
+      (htSelect Height (htAdd (wStart w) (wLen w)) h (htAdd (wStart w) (wLen w)) h)
+-- The decay floor of design sec 4 (Q-S6-5 (a)). At the clamped height hc
+-- the floor is so - (so - m)(hc - s)/wl, with the window start s, the
+-- window length wl, startOut so and minOut m. The test o >= floor is
+-- wl*o + hc*so + s*m >= wl*so + hc*m + s*so: it has no subtraction and
+-- no division. decayTest wl s hc o so m says yes when the quote output o
+-- is at or above the floor. Bounds: wl <= 2^32, s <= 2^32 - 1,
+-- hc < 2^33 and each amount <= 2^64 - 1, thus each product is below 2^97
+-- and each side is below 2^98, in the word.
+def decayTest : Height -> Height -> Height -> Amount -> Amount -> Amount -> Sum Unit Unit :=
+  fun (wl : Height) (s : Height) (hc : Height) (o : Amount) (so : Amount) (m : Amount) =>
+    amLe (amAdd (amScale wl so) (amAdd (amScale hc m) (amScale s so)))
+      (amAdd (amScale wl o) (amAdd (amScale hc so) (amScale s m)))
+-- decayAt i h o m is the decay test of the intent i at the height h, for
+-- the open quote output o and the open minOut m. It does not use open.
+def decayAt : Intent -> Height -> Amount -> Amount -> Sum Unit Unit :=
+  fun (i : Intent) (h : Height) (o : Amount) (m : Amount) =>
+    decayTest (wLen (itWindow i)) (wStart (itWindow i)) (wClamp (itWindow i) h) o (itStartOut i) m
+-- cross i q h is the sealed decay test: the quote output and minOut stay
+-- sealed (Q-S6-3 (a)).
+def cross : Intent -> Quote -> Height -> Sealed (Sum Unit Unit) :=
+  fun (i : Intent) (q : Quote) (h : Height) =>
+    encMap2 Amount Amount (Sum Unit Unit) (fun (o : Amount) (m : Amount) => decayAt i h o m) (qtOut q) (itMinOut i)
+-- settleOut i q is the two transfers of a fill: amtIn from the owner to
+-- the solver, and the quote output from the solver to the owner.
+def settleOut : Intent -> Quote -> Outcome :=
+  fun (i : Intent) (q : Quote) =>
+    settled (transfer (itInTok i) (open Amount (itAmtIn i)) (itOwner i) (qtSolver q))
+      (transfer (itOutTok i) (open Amount (qtOut q)) (qtSolver q) (itOwner i))
+-- The laws of the swap (S6, design sec 4). vdOk and vdBad are the two
+-- steps down a chain of checks: a check with the flag yes gives the rest
+-- of the chain, and a check with the flag no gives reject with its reason.
+law def vdOk : (A : Type 0) -> (f : Sum Unit Unit) -> (w : Reason) -> (v : Verdict A) -> Path (Sum Unit Unit) f (inr unit) -> Path (Verdict A) (vdCheck A f w v) v :=
+  fun (A : Type 0) (f : Sum Unit Unit) (w : Reason) (v : Verdict A) (p : Path (Sum Unit Unit) f (inr unit)) =>
+    cong (fun (b : Sum Unit Unit) => vdCheck A b w v) p
+law def vdBad : (A : Type 0) -> (f : Sum Unit Unit) -> (w : Reason) -> (v : Verdict A) -> Path (Sum Unit Unit) f (inl unit) -> Path (Verdict A) (vdCheck A f w v) (reject A w) :=
+  fun (A : Type 0) (f : Sum Unit Unit) (w : Reason) (v : Verdict A) (p : Path (Sum Unit Unit) f (inl unit)) =>
+    cong (fun (b : Sum Unit Unit) => vdCheck A b w v) p
+-- S2 (Q-S6-5 (a)): open of a sealed map with two arguments is the map of
+-- the open values. Thus the sealed decay test cross gives the decay test
+-- of the open quote output and the open minOut.
+law def openMap2 : (A : Type 0) -> (B : Type 0) -> (C : Type 0) -> (g : A -> B -> C) -> (m : Sealed A) -> (n : Sealed B) -> Path C (open C (encMap2 A B C g m n)) (g (open A m) (open B n)) :=
+  fun (A : Type 0) (B : Type 0) (C : Type 0) (g : A -> B -> C) (m : Sealed A) (n : Sealed B) =>
+    elim (fun (s : Sealed A) => Path C (open C (encMap2 A B C g s n)) (g (open A s) (open B n)))
+      (fun (a : A) =>
+        elim (fun (t : Sealed B) => Path C (open C (encMap2 A B C g (seal A a) t)) (g a (open B t))) (fun (b : B) => refl) n) m
+law def s2Cross : (i : Intent) -> (q : Quote) -> (h : Height) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (decayAt i h (open Amount (qtOut q)) (open Amount (itMinOut i))) :=
+  fun (i : Intent) (q : Quote) (h : Height) =>
+    openMap2 Amount Amount (Sum Unit Unit) (fun (o : Amount) (m : Amount) => decayAt i h o m) (qtOut q) (itMinOut i)
+-- S5: the outcome of a fill entry is its two legs. Both legs are in one
+-- entry, or the entry is not in the log.
+def fillOutcome : Fill -> Outcome :=
+  fun (f : Fill) => settled (flLegIn f) (flLegOut f)
+law def s5Fill : (f : Fill) -> Path Outcome (fillOutcome f) (settled (flLegIn f) (flLegOut f)) :=
+  fun (f : Fill) => refl
+-- The governance of design sec 5 (S7). Members is the committee: a list of
+-- keys. A Pair is a token pair that the Params admit for a swap.
+family Members := mbNil | mbCons (mbHead : Key) (mbTail : Members)
+family Pair := tradePair (paIn : Token) (paOut : Token)
+family Pairs := paNil | paCons (paHead : Pair) (paTail : Pairs)
+-- The price list of langc serve (Q-S0-11 (b), Q-S7-1 (a)): three tiers in
+-- cents. The genesis tiers are 1, 5 and 20. Each tier is in the range 1 to
+-- 20: pcTier x says yes when 1 <= x <= pcMax, and pcIn says yes when the
+-- three tiers are in the range.
+family Prices := prices (pcLow : Amount) (pcBuild : Amount) (pcExport : Amount)
+def pcMax : Amount :=
+  amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero)))))))))))))))))))
+-- amCase x is inl unit at zero, else inr of the predecessor. amLeLin x y is
+-- amLe x y in about x * y steps. The eval of an elim computes each recursive
+-- value first, thus the inner elim of amLe takes about C(x + y, x) steps
+-- (amLe 20 20 reaches the arena limit). amLeLin does a case on amCase y in
+-- place of the inner elim.
+def amCase : Amount -> Sum Unit Amount :=
+  fun (x : Amount) => elim (fun (a : Amount) => Sum Unit Amount) (inl unit) (fun (a : Amount) (ih : Sum Unit Amount) => inr a) x
+def amLeLin : Amount -> Amount -> Sum Unit Unit :=
+  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Sum Unit Unit)
+    (fun (y : Amount) => inr unit)
+    (fun (a : Amount) (ih : Amount -> Sum Unit Unit) => fun (y : Amount) =>
+      elim (fun (s : Sum Unit Amount) => Sum Unit Unit) (fun (u : Unit) => inl unit) (fun (b : Amount) => ih b) (amCase y)) x
+def pcTier : Amount -> Sum Unit Unit :=
+  fun (x : Amount) => sAnd (amLeLin (amSucc amZero) x) (amLeLin x pcMax)
+def pcIn : Prices -> Sum Unit Unit :=
+  fun (p : Prices) => sAnd (pcTier (pcLow p)) (sAnd (pcTier (pcBuild p)) (pcTier (pcExport p)))
+-- tMin is the static floor of the threshold (Q-S0-9 (a)): 2.
+def tMin : Height := htSucc (htSucc htZero)
+-- Params (Q-S7-1 (a)): the committee, the threshold prT, the amend quorum
+-- prQuorum, the token pairs, the price list and two proof fields. prFloor
+-- is the floor tMin <= prT (law G3) and prRange is the price range. A
+-- proof field names an earlier field. A closed Params with a proof field
+-- that the kernel cannot check gives REFUSE_FLOOR.
+family Params := params (prMembers : Members) (prT : Height) (prQuorum : Height) (prPairs : Pairs) (prPrices : Prices) (prFloor : Path (Sum Unit Unit) (htLe tMin prT) (inr unit)) (prRange : Path (Sum Unit Unit) (pcIn prPrices) (inr unit))
+-- A statement is what a certificate signs (Q-S7-3 (a)): a fill (the
+-- nullifier and the height) or an amendment (the Root digest and the
+-- height), or a withdrawal (the key, the token, the amount and the
+-- height; USER ruling, S7 session 5). A certificate is a statement and
+-- a list of signatures.
+family Statement := smFill (smNf : Nullifier) (smAt : Height) | smAmend (smRoot : Root) (smAmAt : Height) | smWithdraw (smWdKey : Key) (smWdTok : Token) (smWdAmt : Amount) (smWdAt : Height)
+family Sigs := csNil | csCons (csKey : Key) (csSig : Sig) (csRest : Sigs)
+family Certificate := certificate (ctStmt : Statement) (ctSigs : Sigs)
+-- The equality words of S7 (inr unit is "equal").
+def keyEq : Key -> Key -> Sum Unit Unit :=
+  fun (a : Key) (b : Key) => elim (fun (u : Key) => Sum Unit Unit)
+    (fun (p : Pt1) => elim (fun (v : Key) => Sum Unit Unit)
+      (fun (q : Pt1) => ptEq p q) b) a
+def rootEq : Root -> Root -> Sum Unit Unit :=
+  fun (a : Root) (b : Root) => elim (fun (u : Root) => Sum Unit Unit)
+    (fun (i : Nat) => elim (fun (v : Root) => Sum Unit Unit)
+      (fun (j : Nat) => flagIf (natEq i j) (inr unit) (inl unit)) b) a
+def htEq : Height -> Height -> Sum Unit Unit :=
+  fun (a : Height) (b : Height) => sAnd (htLe a b) (htLe b a)
+def amEq : Amount -> Amount -> Sum Unit Unit :=
+  fun (a : Amount) (b : Amount) => sAnd (amLeLin a b) (amLeLin b a)
+def smEq : Statement -> Statement -> Sum Unit Unit :=
+  fun (s : Statement) (t : Statement) =>
+    elim (fun (u : Statement) => Sum Unit Unit)
+      (fun (n : Nullifier) (h : Height) => elim (fun (v : Statement) => Sum Unit Unit)
+        (fun (m : Nullifier) (g : Height) => sAnd (nfEq n m) (htEq h g))
+        (fun (r : Root) (g : Height) => inl unit)
+        (fun (j : Key) (o : Token) (y : Amount) (g : Height) => inl unit) t)
+      (fun (r : Root) (h : Height) => elim (fun (v : Statement) => Sum Unit Unit)
+        (fun (m : Nullifier) (g : Height) => inl unit)
+        (fun (o : Root) (g : Height) => sAnd (rootEq r o) (htEq h g))
+        (fun (j : Key) (o : Token) (y : Amount) (g : Height) => inl unit) t)
+      (fun (k : Key) (w : Token) (x : Amount) (h : Height) => elim (fun (v : Statement) => Sum Unit Unit)
+        (fun (m : Nullifier) (g : Height) => inl unit)
+        (fun (o : Root) (g : Height) => inl unit)
+        (fun (j : Key) (o : Token) (y : Amount) (g : Height) => sAnd (keyEq k j) (sAnd (tkEq w o) (sAnd (amEq x y) (htEq h g)))) t) s
+-- smMsg s is the message word of the statement s (Q-S8b2-3 (a), Q-S8b2-20
+-- (a)): each Nat id goes to Fr by natToFr. smMsg is an opaque def
+-- (Q-S8b2-38 (a)): the check does not unfold it.
+opaque def smMsg : Statement -> Fe :=
+  fun (s : Statement) => elim (fun (t : Statement) => Fe)
+    (fun (n : Nullifier) (h : Height) => msFill (elim (fun (u : Nullifier) => Fe) (fun (j : Nat) => natToFr j) n) (htToFr h))
+    (fun (r : Root) (h : Height) => msAmend (elim (fun (u : Root) => Fe) (fun (j : Nat) => natToFr j) r) (htToFr h))
+    (fun (k : Key) (t : Token) (x : Amount) (h : Height) => elim (fun (u : Key) => Fe)
+      (fun (p : Pt1) => msWithdraw p (elim (fun (v : Token) => Fe) (fun (j : Nat) => natToFr j) t) (amToFr x) (htToFr h)) k) s
+-- mbHas k m says yes when the key k is in the committee m. csHas k w s says
+-- yes when s has a signature from the key k on the message w. An entry does
+-- the Schnorr check only when its key is k (S8b2).
+def mbHas : Key -> Members -> Sum Unit Unit :=
+  fun (k : Key) (m : Members) =>
+    elim (fun (t : Members) => Sum Unit Unit) (inl unit) (fun (j : Key) (r : Members) (ih : Sum Unit Unit) => sOr (keyEq k j) ih) m
+def csHas : Key -> Fe -> Sigs -> Sum Unit Unit :=
+  fun (k : Key) (w : Fe) (s : Sigs) =>
+    elim (fun (t : Sigs) => Sum Unit Unit) (inl unit) (fun (j : Key) (g : Sig) (r : Sigs) (ih : Sum Unit Unit) =>
+      sOr (elim (fun (b : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inl unit) (fun (u : Unit) => sgVrf k g w) (keyEq k j)) ih) s
+-- ctCount m w s is the count of the distinct members of m with a signature
+-- on the message w in s: a member counts once, at its last place in m.
+def ctCount : Members -> Fe -> Sigs -> Height :=
+  fun (m : Members) (w : Fe) (s : Sigs) =>
+    elim (fun (t : Members) => Height) htZero
+      (fun (k : Key) (r : Members) (ih : Height) =>
+        elim (fun (b : Sum Unit Unit) => Height) (fun (u : Unit) => ih) (fun (u : Unit) => htSucc ih) (sAnd (csHas k w s) (sNot (mbHas k r)))) m
+-- ctCheck m k s c (Q-S7-3 (a), gavel-lang checkCert) says yes when the
+-- certificate c signs the statement s and at least k distinct members of
+-- m signed it.
+-- The count (and its Schnorr checks) runs only when c holds the statement
+-- s (S8b2). The message is smMsg s.
+def ctCheck : Members -> Height -> Statement -> Certificate -> Sum Unit Unit :=
+  fun (m : Members) (k : Height) (s : Statement) (c : Certificate) =>
+    elim (fun (b : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inl unit) (fun (u : Unit) => htLe k (ctCount m (smMsg s) (ctSigs c))) (smEq s (ctStmt c))
+-- vdWith A s w gives reject A w when s says no. When s says yes, it gives
+-- k of the path from s to yes: thus k can build a proof field.
+def vdWith : (A : Type 0) -> (s : Sum Unit Unit) -> Reason -> (Path (Sum Unit Unit) s (inr unit) -> Verdict A) -> Verdict A :=
+  fun (A : Type 0) (s : Sum Unit Unit) (w : Reason) =>
+    elim (fun (b : Sum Unit Unit) => (Path (Sum Unit Unit) b (inr unit) -> Verdict A) -> Verdict A)
+      (fun (u : Unit) (g : Path (Sum Unit Unit) (inl u) (inr unit) -> Verdict A) => reject A w)
+      (fun (u : Unit) => elim (fun (v : Unit) => (Path (Sum Unit Unit) (inr v) (inr unit) -> Verdict A) -> Verdict A)
+        (fun (g : Path (Sum Unit Unit) (inr unit) (inr unit) -> Verdict A) => g refl) u) s
+-- certOpen A p c s x is the certified open (Q-S7-3 (a)): reject badCert
+-- when c does not give prT p signatures of the members of p on s, else
+-- accept of the open value of x.
+def certOpen : (A : Type 0) -> Params -> Certificate -> Statement -> Sealed A -> Verdict A :=
+  fun (A : Type 0) (p : Params) (c : Certificate) (s : Statement) (x : Sealed A) =>
+    vdCheck A (ctCheck (prMembers p) (prT p) s c) badCert (accept A (open A x))
+-- The amendment of design sec 5 (Q-S7-2 (a)): the new committee, the
+-- threshold, the quorum, the pairs, the prices and the Root digest of the
+-- text. It has no proof fields: amend builds them.
+family Amendment := amendment (adMembers : Members) (adT : Height) (adQuorum : Height) (adPairs : Pairs) (adPrices : Prices) (adRoot : Root)
+-- The log entries (Q-S7-6 (a)): a fill, an amendment, a deposit and a
+-- withdrawal, each with its height. The Log is not indexed by Params.
+family Entry := enFill (efIntent : Intent) (efQuote : Quote) (efCert : Certificate) (efAt : Height) | enAmend (eaAmend : Amendment) (eaCert : Certificate) (eaAt : Height) | enDeposit (edKey : Key) (edTok : Token) (edAmt : Amount) (edAt : Height) | enWithdraw (ewKey : Key) (ewTok : Token) (ewAmt : Amount) (ewCert : Certificate) (ewAt : Height)
+family Log := lgNil | lgCons (lgHead : Entry) (lgTail : Log)
+-- The book of S7 (Q-S7-5 (a)): a journal of account rows and the spent
+-- nullifiers. A credit adds the row (k, t, x, 0) and a debit adds the row
+-- (k, t, 0, x). The balance of the key k at the token t is the sum of the
+-- credits less the sum of the debits of the rows of k and t.
+family Acct := acct (acKey : Key) (acTok : Token) (acCredit : Amount) (acDebit : Amount)
+family Accts := acNil | acCons (acHead : Acct) (acTail : Accts)
+family Book := book (bkAccts : Accts) (bkSpent : Spent)
+-- The state of the replay: the Params in force, the Params of the next
+-- height (G2), the height of the last amendment and the book. The name is
+-- GovState, because State is the program state of a guest (USER ruling,
+-- S7 session 3).
+family GovState := govState (ssCur : Params) (ssNext : Params) (ssAt : Height) (ssBook : Book)
+-- acMine k t a says yes when the row a is of the key k and the token t.
+-- acIn and acOut are the sums of the credits and of the debits of k and t.
+def acMine : Key -> Token -> Acct -> Sum Unit Unit :=
+  fun (k : Key) (t : Token) (a : Acct) => sAnd (keyEq k (acKey a)) (tkEq t (acTok a))
+def acIn : Key -> Token -> Accts -> Amount :=
+  fun (k : Key) (t : Token) (l : Accts) =>
+    elim (fun (r : Accts) => Amount) amZero
+      (fun (a : Acct) (r : Accts) (ih : Amount) =>
+        elim (fun (s : Sum Unit Unit) => Amount) (fun (u : Unit) => ih) (fun (u : Unit) => amAdd (acCredit a) ih) (acMine k t a)) l
+def acOut : Key -> Token -> Accts -> Amount :=
+  fun (k : Key) (t : Token) (l : Accts) =>
+    elim (fun (r : Accts) => Amount) amZero
+      (fun (a : Acct) (r : Accts) (ih : Amount) =>
+        elim (fun (s : Sum Unit Unit) => Amount) (fun (u : Unit) => ih) (fun (u : Unit) => amAdd (acDebit a) ih) (acMine k t a)) l
+-- The book words: bkCredit and bkDebit add a row. bkCan k t x b says yes
+-- when k can pay x of t: the debits and x are at most the credits
+-- (amLeLin). bkSpend adds a spent nullifier; bkHas says yes when the
+-- nullifier is spent.
+def bkCredit : Key -> Token -> Amount -> Book -> Book :=
+  fun (k : Key) (t : Token) (x : Amount) (b : Book) => book (acCons (acct k t x amZero) (bkAccts b)) (bkSpent b)
+def bkDebit : Key -> Token -> Amount -> Book -> Book :=
+  fun (k : Key) (t : Token) (x : Amount) (b : Book) => book (acCons (acct k t amZero x) (bkAccts b)) (bkSpent b)
+def bkCan : Key -> Token -> Amount -> Book -> Sum Unit Unit :=
+  fun (k : Key) (t : Token) (x : Amount) (b : Book) => amLeLin (amAdd (acOut k t (bkAccts b)) x) (acIn k t (bkAccts b))
+def bkSpend : Nullifier -> Book -> Book :=
+  fun (n : Nullifier) (b : Book) => book (bkAccts b) (spCons n (bkSpent b))
+def bkHas : Nullifier -> Book -> Sum Unit Unit :=
+  fun (n : Nullifier) (b : Book) => spHas n (bkSpent b)
+-- The pair check of settle: the two tokens are not equal and the Params
+-- list the pair. paHas a b l says yes when l has the pair (a, b).
+def paHas : Token -> Token -> Pairs -> Sum Unit Unit :=
+  fun (a : Token) (b : Token) (l : Pairs) =>
+    elim (fun (t : Pairs) => Sum Unit Unit) (inl unit) (fun (r : Pair) (s : Pairs) (ih : Sum Unit Unit) => sOr (sAnd (tkEq a (paIn r)) (tkEq b (paOut r))) ih) l
+def paOk : Params -> Intent -> Sum Unit Unit :=
+  fun (p : Params) (i : Intent) => sAnd (sNot (tkEq (itInTok i) (itOutTok i))) (paHas (itInTok i) (itOutTok i) (prPairs p))
+-- The funds of a fill (Q-S7-5 (a)): fdFlag b i q says yes when the owner
+-- can pay amtIn of the in token and the solver can pay the quote output
+-- of the out token. fdPick f i q is the two transfers of settleOut on yes
+-- and unfilled on no.
+def fdFlag : Book -> Intent -> Quote -> Sum Unit Unit :=
+  fun (b : Book) (i : Intent) (q : Quote) =>
+    sAnd (bkCan (itOwner i) (itInTok i) (open Amount (itAmtIn i)) b) (bkCan (qtSolver q) (itOutTok i) (open Amount (qtOut q)) b)
+def fdPick : Sum Unit Unit -> Intent -> Quote -> Outcome :=
+  fun (f : Sum Unit Unit) (i : Intent) (q : Quote) =>
+    elim (fun (s : Sum Unit Unit) => Outcome) (fun (u : Unit) => unfilled) (fun (u : Unit) => settleOut i q) f
+-- settle p b i q c h (S7, Q-S7-3 (a), Q-S7-5 (a)) is a chain of checks,
+-- with the first check outermost: reused (the spent nullifiers of the
+-- book b), expired, badPair (the pairs of the Params p), badProof,
+-- badCert, belowFloor. Then the funds tail gives the two transfers or
+-- unfilled. Each check has a named tail: settleRest is the checks 2 to 6,
+-- settlePair 3 to 6, settleProof 4 to 6, settleCert 5 and 6, settleFloor
+-- the check 6 and settleFunds the funds tail. The certificate c signs the
+-- fill statement (the nullifier and the height h), and the floor test
+-- opens the sealed values only after the certificate check (the shape of
+-- certOpen).
+def settleFunds : Book -> Intent -> Quote -> Outcome :=
+  fun (b : Book) (i : Intent) (q : Quote) => fdPick (fdFlag b i q) i q
+def settleFloor : Book -> Intent -> Quote -> Height -> Verdict Outcome :=
+  fun (b : Book) (i : Intent) (q : Quote) (h : Height) =>
+    vdCheck Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleFunds b i q))
+def settleCert : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
+    vdCheck Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h)
+-- itMsg i is the message word of the intent i (Q-S8b2-3 (a), Q-S8b2-25
+-- (a)): the window gives its two stored fields, and each Nat id goes to Fr
+-- by natToFr. itMsg is an opaque def (Q-S8b2-38 (a)): the check does not
+-- unfold it.
+opaque def itMsg : Intent -> Fe :=
+  fun (i : Intent) => elim (fun (v : Window) => Fe)
+    (fun (s : Height) (l : Height) => msIntent (elim (fun (u : Nullifier) => Fe) (fun (j : Nat) => natToFr j) (itNf i))
+      (elim (fun (u : Token) => Fe) (fun (j : Nat) => natToFr j) (itInTok i)) (elim (fun (u : Token) => Fe) (fun (j : Nat) => natToFr j) (itOutTok i))
+      (amToFr (itStartOut i)) (htToFr s) (htToFr l) (htToFr (itDeadline i))) (itWindow i)
+def settleProof : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
+    vdCheck Outcome (sgVrf (itOwner i) (itSig i) (itMsg i)) badProof (settleCert p b i q c h)
+def settlePair : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
+    vdCheck Outcome (paOk p i) badPair (settleProof p b i q c h)
+def settleRest : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
+    vdCheck Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h)
+def settle : Params -> Book -> Intent -> Quote -> Certificate -> Height -> Verdict Outcome :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
+    vdCheck Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h)
+-- govAmend p a c h (design sec 5, Q-S7-2 (a)) gives reject badCert when c
+-- does not give prQuorum p signatures of the members of p on the
+-- amendment statement (the Root digest of a and the height h), reject
+-- belowTMin when the new threshold is below tMin, and reject badPrice
+-- when a new price tier is out of the range. Else it gives accept of the
+-- new Params, with the two paths of vdWith as the proof fields. The name
+-- is govAmend, because amend is a guest name (rule R4, USER ruling, S7
+-- session 4).
+def govAmend : Params -> Amendment -> Certificate -> Height -> Verdict Params :=
+  fun (p : Params) (a : Amendment) (c : Certificate) (h : Height) =>
+    vdCheck Params (ctCheck (prMembers p) (prQuorum p) (smAmend (adRoot a) h) c) badCert
+      (vdWith Params (htLe tMin (adT a)) belowTMin
+        (fun (f : Path (Sum Unit Unit) (htLe tMin (adT a)) (inr unit)) =>
+          vdWith Params (pcIn (adPrices a)) badPrice
+            (fun (g : Path (Sum Unit Unit) (pcIn (adPrices a)) (inr unit)) =>
+              accept Params (params (adMembers a) (adT a) (adQuorum a) (adPairs a) (adPrices a) f g))))
+-- S1 on the settle of S7: when the six flags and the funds flag are yes,
+-- settle gives accept with the two transfers of settleOut. When the six
+-- flags are yes and the funds flag is no, settle gives accept with
+-- unfilled. When the flags before a check are yes and the flag of that
+-- check is no, settle gives reject with its reason. Each law is a trans
+-- chain of vdOk, then one vdBad or one cong on the funds flag.
+law def s1Accept : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inr unit) -> Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit) -> Path (Sum Unit Unit) (fdFlag b i q) (inr unit) -> Path (Verdict Outcome) (settle p b i q c h) (accept Outcome (settleOut i q)) :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inr unit)) (p5 : Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit)) (p6 : Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit)) (p7 : Path (Sum Unit Unit) (fdFlag b i q) (inr unit)) =>
+    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (accept Outcome (settleOut i q))
+      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
+      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (accept Outcome (settleOut i q))
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
+        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (accept Outcome (settleOut i q))
+          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
+          (trans (Verdict Outcome) (settleProof p b i q c h) (settleCert p b i q c h) (accept Outcome (settleOut i q))
+            (vdOk Outcome (sgVrf (itOwner i) (itSig i) (itMsg i)) badProof (settleCert p b i q c h) p4)
+            (trans (Verdict Outcome) (settleCert p b i q c h) (settleFloor b i q h) (accept Outcome (settleOut i q))
+              (vdOk Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h) p5)
+              (trans (Verdict Outcome) (settleFloor b i q h) (accept Outcome (settleFunds b i q)) (accept Outcome (settleOut i q))
+                (vdOk Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleFunds b i q)) p6)
+                (cong (fun (f : Sum Unit Unit) => accept Outcome (fdPick f i q)) p7))))))
+law def s1Unfilled : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inr unit) -> Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit) -> Path (Sum Unit Unit) (fdFlag b i q) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (accept Outcome unfilled) :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inr unit)) (p5 : Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit)) (p6 : Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inr unit)) (z7 : Path (Sum Unit Unit) (fdFlag b i q) (inl unit)) =>
+    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (accept Outcome unfilled)
+      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
+      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (accept Outcome unfilled)
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
+        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (accept Outcome unfilled)
+          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
+          (trans (Verdict Outcome) (settleProof p b i q c h) (settleCert p b i q c h) (accept Outcome unfilled)
+            (vdOk Outcome (sgVrf (itOwner i) (itSig i) (itMsg i)) badProof (settleCert p b i q c h) p4)
+            (trans (Verdict Outcome) (settleCert p b i q c h) (settleFloor b i q h) (accept Outcome unfilled)
+              (vdOk Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h) p5)
+              (trans (Verdict Outcome) (settleFloor b i q h) (accept Outcome (settleFunds b i q)) (accept Outcome unfilled)
+                (vdOk Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleFunds b i q)) p6)
+                (cong (fun (f : Sum Unit Unit) => accept Outcome (fdPick f i q)) z7))))))
+law def s1Expired : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome expired) :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (z2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inl unit)) =>
+    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome expired)
+      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
+      (vdBad Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) z2)
+law def s1BadPair : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome badPair) :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (z3 : Path (Sum Unit Unit) (paOk p i) (inl unit)) =>
+    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome badPair)
+      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
+      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (reject Outcome badPair)
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
+        (vdBad Outcome (paOk p i) badPair (settleProof p b i q c h) z3))
+law def s1BadProof : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome badProof) :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (z4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inl unit)) =>
+    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome badProof)
+      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
+      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (reject Outcome badProof)
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
+        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (reject Outcome badProof)
+          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
+          (vdBad Outcome (sgVrf (itOwner i) (itSig i) (itMsg i)) badProof (settleCert p b i q c h) z4)))
+law def s1BadCert : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inr unit) -> Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome badCert) :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inr unit)) (z5 : Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inl unit)) =>
+    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome badCert)
+      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
+      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (reject Outcome badCert)
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
+        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (reject Outcome badCert)
+          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
+          (trans (Verdict Outcome) (settleProof p b i q c h) (settleCert p b i q c h) (reject Outcome badCert)
+            (vdOk Outcome (sgVrf (itOwner i) (itSig i) (itMsg i)) badProof (settleCert p b i q c h) p4)
+            (vdBad Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h) z5))))
+law def s1BelowFloor : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit) -> Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit) -> Path (Sum Unit Unit) (paOk p i) (inr unit) -> Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inr unit) -> Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit) -> Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inl unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome belowFloor) :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (p1 : Path (Sum Unit Unit) (sNot (bkHas (itNf i) b)) (inr unit)) (p2 : Path (Sum Unit Unit) (htLe h (itDeadline i)) (inr unit)) (p3 : Path (Sum Unit Unit) (paOk p i) (inr unit)) (p4 : Path (Sum Unit Unit) (sgVrf (itOwner i) (itSig i) (itMsg i)) (inr unit)) (p5 : Path (Sum Unit Unit) (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) (inr unit)) (z6 : Path (Sum Unit Unit) (open (Sum Unit Unit) (cross i q h)) (inl unit)) =>
+    trans (Verdict Outcome) (settle p b i q c h) (settleRest p b i q c h) (reject Outcome belowFloor)
+      (vdOk Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) p1)
+      (trans (Verdict Outcome) (settleRest p b i q c h) (settlePair p b i q c h) (reject Outcome belowFloor)
+        (vdOk Outcome (htLe h (itDeadline i)) expired (settlePair p b i q c h) p2)
+        (trans (Verdict Outcome) (settlePair p b i q c h) (settleProof p b i q c h) (reject Outcome belowFloor)
+          (vdOk Outcome (paOk p i) badPair (settleProof p b i q c h) p3)
+          (trans (Verdict Outcome) (settleProof p b i q c h) (settleCert p b i q c h) (reject Outcome belowFloor)
+            (vdOk Outcome (sgVrf (itOwner i) (itSig i) (itMsg i)) badProof (settleCert p b i q c h) p4)
+            (trans (Verdict Outcome) (settleCert p b i q c h) (settleFloor b i q h) (reject Outcome belowFloor)
+              (vdOk Outcome (ctCheck (prMembers p) (prT p) (smFill (itNf i) h) c) badCert (settleFloor b i q h) p5)
+              (vdBad Outcome (open (Sum Unit Unit) (cross i q h)) belowFloor (accept Outcome (settleFunds b i q)) z6)))))
+-- N1 (Q-S6-4 (a)): a nullifier that the book has spent gives reject
+-- with the reason reused.
+law def n1Reused : (p : Params) -> (b : Book) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (bkHas (itNf i) b) (inr unit) -> Path (Verdict Outcome) (settle p b i q c h) (reject Outcome reused) :=
+  fun (p : Params) (b : Book) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (z : Path (Sum Unit Unit) (bkHas (itNf i) b) (inr unit)) =>
+    vdBad Outcome (sNot (bkHas (itNf i) b)) reused (settleRest p b i q c h) (cong (fun (s : Sum Unit Unit) => sNot s) z)
+-- S3: two quotes from one solver with equal open outputs give equal
+-- verdicts.
+law def s3Quote : (p : Params) -> (b : Book) -> (i : Intent) -> (k : Key) -> (c : Certificate) -> (h : Height) -> (m : Sealed Amount) -> (n : Sealed Amount) -> Path Amount (open Amount m) (open Amount n) -> Path (Verdict Outcome) (settle p b i (quote m k) c h) (settle p b i (quote n k) c h) :=
+  fun (p : Params) (b : Book) (i : Intent) (k : Key) (c : Certificate) (h : Height) (m : Sealed Amount) (n : Sealed Amount) =>
+    elim (fun (s : Sealed Amount) => Path Amount (open Amount s) (open Amount n) -> Path (Verdict Outcome) (settle p b i (quote s k) c h) (settle p b i (quote n k) c h))
+      (fun (a : Amount) =>
+        elim (fun (t : Sealed Amount) => Path Amount a (open Amount t) -> Path (Verdict Outcome) (settle p b i (quote (seal Amount a) k) c h) (settle p b i (quote t k) c h))
+          (fun (e : Amount) (r : Path Amount a e) => cong (fun (x : Amount) => settle p b i (quote (seal Amount x) k) c h) r) n) m
+-- The replay of design sec 5 (S7, Q-S7-6 (a)). vdThen A B v k gives
+-- reject B w when v is reject A w, and k x when v is accept A x.
+def vdThen : (A : Type 0) -> (B : Type 0) -> Verdict A -> (A -> Verdict B) -> Verdict B :=
+  fun (A : Type 0) (B : Type 0) (v : Verdict A) (k : A -> Verdict B) =>
+    elim (fun (u : Verdict A) => Verdict B) (fun (x : A) => k x) (fun (w : Reason) => reject B w) v
+-- bkZero is the book with no rows and no spent nullifiers. gsCur s h is
+-- the Params in force for an entry at the height h: ssNext s when h is
+-- above ssAt s, else ssCur s (G2).
+def bkZero : Book := book acNil spNil
+def gsCur : GovState -> Height -> Params :=
+  fun (s : GovState) (h : Height) =>
+    elim (fun (f : Sum Unit Unit) => Params) (fun (u : Unit) => ssNext s) (fun (u : Unit) => ssCur s) (htLe h (ssAt s))
+-- gsPay t b is the transfer t on the book b: a debit of the payer and a
+-- credit of the payee. gsBook n o b is the book after the outcome o of a
+-- fill with the nullifier n: on settled, the two transfers and the spent
+-- nullifier; on unfilled, the same book (Q-S7-5 (a)).
+def gsPay : Transfer -> Book -> Book :=
+  fun (t : Transfer) (b : Book) => bkCredit (trTo t) (trTok t) (trAmt t) (bkDebit (trFrom t) (trTok t) (trAmt t) b)
+def gsBook : Nullifier -> Outcome -> Book -> Book :=
+  fun (n : Nullifier) (o : Outcome) (b : Book) =>
+    elim (fun (u : Outcome) => Book) (fun (x : Transfer) (y : Transfer) => bkSpend n (gsPay y (gsPay x b))) b o
+-- The four steps, each with the Params in force at the height h. A fill
+-- is settle on the book. An amendment is govAmend; its result is the
+-- next Params, in force from the height h + 1. A deposit is a credit. A
+-- withdrawal needs a certificate on its statement (prT signatures, USER
+-- ruling, S7 session 5), then the funds: a debit does not check them.
+def gsFill : GovState -> Intent -> Quote -> Certificate -> Height -> Verdict GovState :=
+  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) (h : Height) =>
+    vdThen Outcome GovState (settle (gsCur s h) (ssBook s) i q c h)
+      (fun (o : Outcome) => accept GovState (govState (gsCur s h) (ssNext s) (ssAt s) (gsBook (itNf i) o (ssBook s))))
+def gsAmend : GovState -> Amendment -> Certificate -> Height -> Verdict GovState :=
+  fun (s : GovState) (a : Amendment) (c : Certificate) (h : Height) =>
+    vdThen Params GovState (govAmend (gsCur s h) a c h)
+      (fun (n : Params) => accept GovState (govState (gsCur s h) n h (ssBook s)))
+def gsDeposit : GovState -> Key -> Token -> Amount -> Height -> GovState :=
+  fun (s : GovState) (k : Key) (t : Token) (x : Amount) (h : Height) =>
+    govState (gsCur s h) (ssNext s) (ssAt s) (bkCredit k t x (ssBook s))
+def gsWithdraw : GovState -> Key -> Token -> Amount -> Certificate -> Height -> Verdict GovState :=
+  fun (s : GovState) (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) =>
+    vdCheck GovState (ctCheck (prMembers (gsCur s h)) (prT (gsCur s h)) (smWithdraw k t x h) c) badCert
+      (vdCheck GovState (bkCan k t x (ssBook s)) noFunds
+        (accept GovState (govState (gsCur s h) (ssNext s) (ssAt s) (bkDebit k t x (ssBook s)))))
+-- govStep s e is the step of the replay. The name is govStep, because
+-- step is a guest name (rule R4, USER ruling, S7 session 5).
+def govStep : GovState -> Entry -> Verdict GovState :=
+  fun (s : GovState) (e : Entry) =>
+    elim (fun (u : Entry) => Verdict GovState)
+      (fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => gsFill s i q c h)
+      (fun (a : Amendment) (c : Certificate) (h : Height) => gsAmend s a c h)
+      (fun (k : Key) (t : Token) (x : Amount) (h : Height) => accept GovState (gsDeposit s k t x h))
+      (fun (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) => gsWithdraw s k t x c h) e
+-- rpGo l s is the replay of the log l from the state s: the first reject
+-- rejects all (Q-S7-6 (a)). govReplay p l starts with the Params p, the
+-- height 0 and the empty book. The name is govReplay, because replay is
+-- a guest name (rule R4, USER ruling, S7 session 5).
+def rpGo : Log -> GovState -> Verdict GovState :=
+  fun (l : Log) =>
+    elim (fun (r : Log) => GovState -> Verdict GovState)
+      (fun (s : GovState) => accept GovState s)
+      (fun (e : Entry) (r : Log) (ih : GovState -> Verdict GovState) => fun (s : GovState) => vdThen GovState GovState (govStep s e) ih) l
+def govReplay : Params -> Log -> Verdict GovState :=
+  fun (p : Params) (l : Log) => rpGo l (govState p p htZero bkZero)
+-- G1 (Q-S7-6 (a)): lgAmends l is the amendment entries of l. afStep s e
+-- is gsAmend on an amendment entry and accept s on the other entries.
+-- amendFold p l is the next Params of the fold of afStep over l.
+def lgAmends : Log -> Log :=
+  fun (l : Log) =>
+    elim (fun (r : Log) => Log) lgNil
+      (fun (e : Entry) (r : Log) (ih : Log) =>
+        elim (fun (u : Entry) => Log)
+          (fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => ih)
+          (fun (a : Amendment) (c : Certificate) (h : Height) => lgCons (enAmend a c h) ih)
+          (fun (k : Key) (t : Token) (x : Amount) (h : Height) => ih)
+          (fun (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) => ih) e) l
+def afStep : GovState -> Entry -> Verdict GovState :=
+  fun (s : GovState) (e : Entry) =>
+    elim (fun (u : Entry) => Verdict GovState)
+      (fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => accept GovState s)
+      (fun (a : Amendment) (c : Certificate) (h : Height) => gsAmend s a c h)
+      (fun (k : Key) (t : Token) (x : Amount) (h : Height) => accept GovState s)
+      (fun (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) => accept GovState s) e
+def afGo : Log -> GovState -> Verdict GovState :=
+  fun (l : Log) =>
+    elim (fun (r : Log) => GovState -> Verdict GovState)
+      (fun (s : GovState) => accept GovState s)
+      (fun (e : Entry) (r : Log) (ih : GovState -> Verdict GovState) => fun (s : GovState) => vdThen GovState GovState (afStep s e) ih) l
+def amendFold : Params -> Log -> Verdict Params :=
+  fun (p : Params) (l : Log) =>
+    vdThen GovState Params (afGo l (govState p p htZero bkZero)) (fun (s : GovState) => accept Params (ssNext s))
+-- G1 (Q-S7-6 (a)): the replay of the amendment entries of a log gives
+-- the same Params as the fold of govAmend over the log. g1Go is the
+-- induction on the log. A fill, a deposit or a withdrawal entry drops
+-- out on the two sides. On an amendment entry, a case on the verdict of
+-- gsAmend: accept gives the step of the induction, reject gives refl.
+law def g1Go : (l : Log) -> (s : GovState) -> Path (Verdict GovState) (rpGo (lgAmends l) s) (afGo l s) :=
+  fun (l : Log) =>
+    elim (fun (r : Log) => (s : GovState) -> Path (Verdict GovState) (rpGo (lgAmends r) s) (afGo r s))
+      (fun (s : GovState) => refl)
+      (fun (e : Entry) (r : Log) (ih : (s : GovState) -> Path (Verdict GovState) (rpGo (lgAmends r) s) (afGo r s)) => fun (s : GovState) =>
+        elim (fun (u : Entry) => Path (Verdict GovState) (rpGo (lgAmends (lgCons u r)) s) (afGo (lgCons u r) s))
+          (fun (i : Intent) (q : Quote) (c : Certificate) (h : Height) => ih s)
+          (fun (a : Amendment) (c : Certificate) (h : Height) =>
+            elim (fun (v : Verdict GovState) => Path (Verdict GovState) (vdThen GovState GovState v (rpGo (lgAmends r))) (vdThen GovState GovState v (afGo r)))
+              (fun (t : GovState) => ih t)
+              (fun (w : Reason) => refl)
+              (gsAmend s a c h))
+          (fun (k : Key) (t : Token) (x : Amount) (h : Height) => ih s)
+          (fun (k : Key) (t : Token) (x : Amount) (c : Certificate) (h : Height) => ih s) e) l
+law def g1Fix : (p : Params) -> (l : Log) -> Path (Verdict Params) (vdThen GovState Params (govReplay p (lgAmends l)) (fun (s : GovState) => accept Params (ssNext s))) (amendFold p l) :=
+  fun (p : Params) (l : Log) =>
+    cong (fun (v : Verdict GovState) => vdThen GovState Params v (fun (s : GovState) => accept Params (ssNext s))) (g1Go l (govState p p htZero bkZero))
+-- G2 (Q-S7-6 (a)): a fill at the height ssAt s (the height of the last
+-- amendment) settles with the old Params ssCur s, by the height order.
+law def g2Cur : (s : GovState) -> Path Params (gsCur s (ssAt s)) (ssCur s) :=
+  fun (s : GovState) =>
+    cong (fun (f : Sum Unit Unit) => elim (fun (g : Sum Unit Unit) => Params) (fun (u : Unit) => ssNext s) (fun (u : Unit) => ssCur s) f) (htLeRefl (ssAt s))
+law def g2Same : (s : GovState) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> Path (Verdict GovState) (govStep s (enFill i q c (ssAt s))) (vdThen Outcome GovState (settle (ssCur s) (ssBook s) i q c (ssAt s)) (fun (o : Outcome) => accept GovState (govState (ssCur s) (ssNext s) (ssAt s) (gsBook (itNf i) o (ssBook s))))) :=
+  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) =>
+    cong (fun (p : Params) => vdThen Outcome GovState (settle p (ssBook s) i q c (ssAt s)) (fun (o : Outcome) => accept GovState (govState p (ssNext s) (ssAt s) (gsBook (itNf i) o (ssBook s))))) (g2Cur s)
+-- G3 (Q-S7-6 (a)): each Params has t >= t_min (prFloor, by the type).
+law def g3Floor : (p : Params) -> Path (Sum Unit Unit) (htLe tMin (prT p)) (inr unit) :=
+  fun (p : Params) => prFloor p
+-- N1 in the replay form (Q-S7-7 (a)): at a step of the replay, a fill
+-- whose nullifier the book has spent gives reject with the reason
+-- reused (one cong on n1Reused).
+law def n1Replay : (s : GovState) -> (i : Intent) -> (q : Quote) -> (c : Certificate) -> (h : Height) -> Path (Sum Unit Unit) (bkHas (itNf i) (ssBook s)) (inr unit) -> Path (Verdict GovState) (govStep s (enFill i q c h)) (reject GovState reused) :=
+  fun (s : GovState) (i : Intent) (q : Quote) (c : Certificate) (h : Height) (z : Path (Sum Unit Unit) (bkHas (itNf i) (ssBook s)) (inr unit)) =>
+    cong (fun (v : Verdict Outcome) => vdThen Outcome GovState v (fun (o : Outcome) => accept GovState (govState (gsCur s h) (ssNext s) (ssAt s) (gsBook (itNf i) o (ssBook s))))) (n1Reused (gsCur s h) (ssBook s) i q c h z)
