@@ -50,12 +50,11 @@ on 2026-10-08 on AArch64 Darwin. The gate facts below describe the barter-lang S
   (`src/front/check.c:14`, `src/front/core.h:14`). The parser stops at a
   nesting of 1000 (`src/front/parser.c:36`). These limits keep the C
   stack bounded. `test/gate.sh` checks a nesting of 1100 parentheses.
-- The evaluator has a fuel of 20000000 steps (`src/front/core.h:15`).
+- The evaluator has a fuel of 40000000 steps (`src/front/core.h:15`).
   A large loop count can reach `EVAL_FUEL` or the arena limit. The
   differential grid uses large values only for entries with no loop.
-- All memory of `langc` comes from one arena with a limit of 1 GiB
-  (`src/main.c:13`). A run that reaches it stops with `OOM`.
-  `langc eval test/ir/spine.lang foldOnes 4294967296` stops with `OOM`.
+- All memory of `langc` comes from one arena with a limit of 2 GiB
+  (`src/main.c:14`). A run that reaches it stops with `OOM`.
 - The Wasm memory has a fixed size (`src/wasm.c:303`): minimum = maximum =
   the pages of the largest heap bound of an entry, at least 1 page. The
   allocator has no check (`src/wasm.c:256`). An entry with no static heap

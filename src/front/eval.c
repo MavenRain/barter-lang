@@ -2,6 +2,7 @@
    front/core.h). SHARED by the tcc kits. */
 #include "front/core.h"
 #include "front/poseidon_c.h"
+#include "front/pairing_c.h"
 
 #include <string.h>
 
@@ -33,7 +34,7 @@ static const char *const OP_NAMES[] = {
   [OP_NONZERO] = "NonZero", [OP_NONZERO_OF] = "nonZero", [OP_NONZERO_VALUE] = "nonZeroValue",
   [OP_WORD] = "Word",
   [OP_W_ADD] = "wAdd", [OP_W_SUB] = "wSub", [OP_W_MUL] = "wMul", [OP_W_MULHI] = "wMulHi", [OP_W_AND] = "wAnd", [OP_W_OR] = "wOr", [OP_W_XOR] = "wXor",
-  [OP_W_NOT] = "wNot", [OP_W_SHL] = "wShl", [OP_W_SHR] = "wShr", [OP_W_ROTL] = "wRotl", [OP_W_ROTR] = "wRotr", [OP_W_LT] = "wLt", [OP_W_EQ] = "wEq", [OP_FE_MULC] = "feMulC", [OP_PT_MULC] = "ptMulC", [OP_POSEIDON2C] = "poseidon2C", [OP_SCHNORRCHECKC] = "schnorrCheckC", [OP_OPAQUE] = "opaque"
+  [OP_W_NOT] = "wNot", [OP_W_SHL] = "wShl", [OP_W_SHR] = "wShr", [OP_W_ROTL] = "wRotl", [OP_W_ROTR] = "wRotr", [OP_W_LT] = "wLt", [OP_W_EQ] = "wEq", [OP_FE_MULC] = "feMulC", [OP_PT_MULC] = "ptMulC", [OP_POSEIDON2C] = "poseidon2C", [OP_SCHNORRCHECKC] = "schnorrCheckC", [OP_PAIRINGCHECKC] = "pairingCheckC", [OP_OPAQUE] = "opaque"
 };
 
 /* The number of arguments of each operation. VARIES: it comes from the
@@ -51,7 +52,7 @@ static const unsigned char OP_ARITY[] = {
   [OP_NAT_EQ] = 2, [OP_NAT_LE] = 2, [OP_FLAG_IF] = 3,
   [OP_NAT_DIV] = 2, [OP_NAT_MOD] = 2, [OP_FM_LEN] = 2,
   [OP_WORD] = 0, [OP_W_ADD] = 2, [OP_W_SUB] = 2, [OP_W_MUL] = 2, [OP_W_MULHI] = 2, [OP_W_AND] = 2, [OP_W_OR] = 2, [OP_W_XOR] = 2,
-  [OP_W_NOT] = 1, [OP_W_SHL] = 2, [OP_W_SHR] = 2, [OP_W_ROTL] = 2, [OP_W_ROTR] = 2, [OP_W_LT] = 2, [OP_W_EQ] = 2, [OP_FE_MULC] = 3, [OP_PT_MULC] = 3, [OP_POSEIDON2C] = 2, [OP_SCHNORRCHECKC] = 4, [OP_OPAQUE] = 0,
+  [OP_W_NOT] = 1, [OP_W_SHL] = 2, [OP_W_SHR] = 2, [OP_W_ROTL] = 2, [OP_W_ROTR] = 2, [OP_W_LT] = 2, [OP_W_EQ] = 2, [OP_FE_MULC] = 3, [OP_PT_MULC] = 3, [OP_POSEIDON2C] = 2, [OP_SCHNORRCHECKC] = 4, [OP_PAIRINGCHECKC] = 1, [OP_OPAQUE] = 0,
   [OP_PROJ] = 1, [OP_KMAP] = 2, [OP_KMAP_OF] = VARIES, [OP_KMAP_GET] = 3, [OP_KMAP_SET] = 4,
   [OP_INTERVAL] = 0, [OP_TRANSP] = 3,
   [OP_SYSTEM] = VARIES, [OP_HCOMP] = 4, [OP_FIN] = 1, [OP_FIN_ADD] = 3,
@@ -1890,7 +1891,7 @@ static void pt_to_affine(const Machine *m, const uint32_t *md, uint32_t n0, cons
    64 for each product past 364 (frE: 381 products, 358464 steps). All of
    it is spent once, before the work. The guest ptMul spends about
    3328912.5 + 71199.7 D + 103710.4 A steps for D doubles and A adds
-   (48105904 at D = A = 256), more than the 20M fuel of one run. */
+   (48105904 at D = A = 256), more than the 40M fuel of one run. */
 static const Value *pt_mulc(Machine *m, Op op, const Value *const *a, uint32_t n) {
   const Value *out = NULL;
   const Value *limbs[8];
@@ -2243,6 +2244,1093 @@ static const Value *schnorr_checkc(Machine *m, Op op, const Value *const *a, uin
     pt_madd(md, n0, r1, &j, rx, ry);
     pt_madd(md, n0, r1, &j, bx, by);
     ok = sc_c_jac_eq(md, n0, ax, ay, &j);
+  }
+  return make(m, VAL_OP, ok ? OP_INR : OP_INL, 0, 1, constant(m, OP_UNIT_VAL), NULL, NULL);
+}
+
+/* pairingCheckC: the native form of the guest pairingCheck chain of
+   domain/domain.lang. Each pc_ function does the field operations of the
+   guest def with the same name, in the same order. The native product
+   (feMulC) is in the place of the product parameter mul. An Fe is 8 Words
+   in Montgomery form, limb 0 first. A result can be an argument: each
+   function writes a local first and copies it to the result last. */
+typedef struct {
+  const Machine *m;
+  const uint32_t *md;
+  uint32_t n0;
+  const uint32_t *r1;
+  const Value *e;
+} PcField;
+
+typedef struct {
+  uint32_t a[8];
+  uint32_t b[8];
+} PcF2;
+
+typedef struct {
+  PcF2 a;
+  PcF2 b;
+  PcF2 c;
+} PcF6;
+
+typedef struct {
+  PcF6 a;
+  PcF6 b;
+} PcF12;
+
+/* f2FeNeg a is 0 - a. */
+static void pc_fe_neg(const PcField *f, const uint32_t *a, uint32_t *r) {
+  static const uint32_t zero[8] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+  uint32_t t[8];
+  fe_sub(f->md, zero, a, t);
+  fe_copy(t, r);
+}
+
+/* f2FeDbl a is a + a. */
+static void pc_fe_dbl(const PcField *f, const uint32_t *a, uint32_t *r) {
+  uint32_t t[8];
+  fe_add(f->md, a, a, t);
+  fe_copy(t, r);
+}
+
+/* f2FeNine a is 9 a: 3 doubles, then one add. */
+static void pc_fe_nine(const PcField *f, const uint32_t *a, uint32_t *r) {
+  uint32_t t[8];
+  uint32_t u[8];
+  pc_fe_dbl(f, a, t);
+  pc_fe_dbl(f, t, u);
+  pc_fe_dbl(f, u, t);
+  fe_add(f->md, t, a, u);
+  fe_copy(u, r);
+}
+
+/* f2FeInv a is a^(p - 2): the f2FePowFrom loop on the exponent bits of
+   fpMod, from 1 in Montgomery form. */
+static void pc_fe_inv(const PcField *f, const uint32_t *a, uint32_t *r) {
+  fe_inv(f->m, f->md, f->n0, f->r1, f->e, a, r);
+}
+
+/* feEq on 2 Fe values. */
+static int pc_fe_eq(const uint32_t *x, const uint32_t *y) {
+  uint32_t i = 0u;
+  uint32_t d = 0u;
+  while (i < 8u) {
+    d |= x[i] ^ y[i];
+    i++;
+  }
+  return d == 0u;
+}
+/* Fp2. f2One is 1 in Montgomery form. */
+static void pc_f2_zero(PcF2 *r) {
+  fe_set_zero(r->a);
+  fe_set_zero(r->b);
+}
+
+static void pc_f2_one(const PcField *f, PcF2 *r) {
+  fe_copy(f->r1, r->a);
+  fe_set_zero(r->b);
+}
+
+static void pc_f2_add(const PcField *f, const PcF2 *a, const PcF2 *b, PcF2 *r) {
+  PcF2 t;
+  fe_add(f->md, a->a, b->a, t.a);
+  fe_add(f->md, a->b, b->b, t.b);
+  *r = t;
+}
+
+static void pc_f2_sub(const PcField *f, const PcF2 *a, const PcF2 *b, PcF2 *r) {
+  PcF2 t;
+  fe_sub(f->md, a->a, b->a, t.a);
+  fe_sub(f->md, a->b, b->b, t.b);
+  *r = t;
+}
+
+static void pc_f2_neg(const PcField *f, const PcF2 *a, PcF2 *r) {
+  PcF2 t;
+  pc_fe_neg(f, a->a, t.a);
+  pc_fe_neg(f, a->b, t.b);
+  *r = t;
+}
+
+static void pc_f2_conj(const PcField *f, const PcF2 *a, PcF2 *r) {
+  PcF2 t;
+  fe_copy(a->a, t.a);
+  pc_fe_neg(f, a->b, t.b);
+  *r = t;
+}
+
+/* (a0 + a1 u)(b0 + b1 u) = (a0 b0 - a1 b1) + (a0 b1 + a1 b0) u. */
+static void pc_f2_mul(const PcField *f, const PcF2 *a, const PcF2 *b, PcF2 *r) {
+  uint32_t p[4][8];
+  PcF2 t;
+  fe_mul(f->md, f->n0, a->a, b->a, p[0]);
+  fe_mul(f->md, f->n0, a->b, b->b, p[1]);
+  fe_sub(f->md, p[0], p[1], t.a);
+  fe_mul(f->md, f->n0, a->a, b->b, p[2]);
+  fe_mul(f->md, f->n0, a->b, b->a, p[3]);
+  fe_add(f->md, p[2], p[3], t.b);
+  *r = t;
+}
+
+static void pc_f2_sqr(const PcField *f, const PcF2 *a, PcF2 *r) {
+  pc_f2_mul(f, a, a, r);
+}
+
+/* (9 + u)(a0 + a1 u) = (9 a0 - a1) + (a0 + 9 a1) u. */
+static void pc_f2_mul_xi(const PcField *f, const PcF2 *a, PcF2 *r) {
+  uint32_t u[8];
+  PcF2 t;
+  pc_fe_nine(f, a->a, u);
+  fe_sub(f->md, u, a->b, t.a);
+  pc_fe_nine(f, a->b, u);
+  fe_add(f->md, a->a, u, t.b);
+  *r = t;
+}
+
+/* f2InvBy a ni: the conjugate of a times ni, the inverse of
+   a0^2 + a1^2. */
+static void pc_f2_inv_by(const PcField *f, const PcF2 *a, const uint32_t *ni, PcF2 *r) {
+  uint32_t u[8];
+  PcF2 t;
+  fe_mul(f->md, f->n0, a->a, ni, t.a);
+  fe_mul(f->md, f->n0, a->b, ni, u);
+  pc_fe_neg(f, u, t.b);
+  *r = t;
+}
+
+static void pc_f2_inv(const PcField *f, const PcF2 *a, PcF2 *r) {
+  uint32_t s[2][8];
+  uint32_t d[8];
+  fe_mul(f->md, f->n0, a->a, a->a, s[0]);
+  fe_mul(f->md, f->n0, a->b, a->b, s[1]);
+  fe_add(f->md, s[0], s[1], d);
+  pc_fe_inv(f, d, d);
+  pc_f2_inv_by(f, a, d, r);
+}
+
+static int pc_f2_eq(const PcF2 *a, const PcF2 *b) {
+  return pc_fe_eq(a->a, b->a) && pc_fe_eq(a->b, b->b);
+}
+/* Fp6. */
+static void pc_f6_zero(PcF6 *r) {
+  pc_f2_zero(&r->a);
+  pc_f2_zero(&r->b);
+  pc_f2_zero(&r->c);
+}
+
+static void pc_f6_one(const PcField *f, PcF6 *r) {
+  pc_f2_one(f, &r->a);
+  pc_f2_zero(&r->b);
+  pc_f2_zero(&r->c);
+}
+
+static void pc_f6_add(const PcField *f, const PcF6 *a, const PcF6 *b, PcF6 *r) {
+  PcF6 t;
+  pc_f2_add(f, &a->a, &b->a, &t.a);
+  pc_f2_add(f, &a->b, &b->b, &t.b);
+  pc_f2_add(f, &a->c, &b->c, &t.c);
+  *r = t;
+}
+
+static void pc_f6_sub(const PcField *f, const PcF6 *a, const PcF6 *b, PcF6 *r) {
+  PcF6 t;
+  pc_f2_sub(f, &a->a, &b->a, &t.a);
+  pc_f2_sub(f, &a->b, &b->b, &t.b);
+  pc_f2_sub(f, &a->c, &b->c, &t.c);
+  *r = t;
+}
+
+static void pc_f6_neg(const PcField *f, const PcF6 *a, PcF6 *r) {
+  PcF6 t;
+  pc_f2_neg(f, &a->a, &t.a);
+  pc_f2_neg(f, &a->b, &t.b);
+  pc_f2_neg(f, &a->c, &t.c);
+  *r = t;
+}
+
+/* c0 = a0 b0 + xi (a1 b2 + a2 b1); c1 = xi a2 b2 + a0 b1 + a1 b0;
+   c2 = a0 b2 + a1 b1 + a2 b0. */
+static void pc_f6_mul(const PcField *f, const PcF6 *a, const PcF6 *b, PcF6 *r) {
+  PcF2 u;
+  PcF2 v;
+  PcF2 w;
+  PcF6 t;
+  pc_f2_mul(f, &a->a, &b->a, &u);
+  pc_f2_mul(f, &a->b, &b->c, &v);
+  pc_f2_mul(f, &a->c, &b->b, &w);
+  pc_f2_add(f, &v, &w, &v);
+  pc_f2_mul_xi(f, &v, &v);
+  pc_f2_add(f, &u, &v, &t.a);
+  pc_f2_mul(f, &a->c, &b->c, &u);
+  pc_f2_mul_xi(f, &u, &u);
+  pc_f2_mul(f, &a->a, &b->b, &v);
+  pc_f2_add(f, &u, &v, &u);
+  pc_f2_mul(f, &a->b, &b->a, &v);
+  pc_f2_add(f, &u, &v, &t.b);
+  pc_f2_mul(f, &a->a, &b->c, &u);
+  pc_f2_mul(f, &a->b, &b->b, &v);
+  pc_f2_add(f, &u, &v, &u);
+  pc_f2_mul(f, &a->c, &b->a, &v);
+  pc_f2_add(f, &u, &v, &t.c);
+  *r = t;
+}
+
+/* v (a0 + a1 v + a2 v^2) = xi a2 + a0 v + a1 v^2. */
+static void pc_f6_mul_v(const PcField *f, const PcF6 *a, PcF6 *r) {
+  PcF6 t;
+  pc_f2_mul_xi(f, &a->c, &t.a);
+  t.b = a->a;
+  t.c = a->b;
+  *r = t;
+}
+
+/* f6InvScale t0 t1 t2 di = (t0 di, t1 di, t2 di). */
+static void pc_f6_inv_scale(const PcField *f, const PcF2 *t0, const PcF2 *t1, const PcF2 *t2, const PcF2 *di,
+                            PcF6 *r) {
+  PcF6 t;
+  pc_f2_mul(f, t0, di, &t.a);
+  pc_f2_mul(f, t1, di, &t.b);
+  pc_f2_mul(f, t2, di, &t.c);
+  *r = t;
+}
+
+/* f6InvBy a t0 t1 t2: d = xi (a2 t1 + a1 t2) + a0 t0, then
+   (t0, t1, t2) / d. */
+static void pc_f6_inv_by(const PcField *f, const PcF6 *a, const PcF2 *t0, const PcF2 *t1, const PcF2 *t2,
+                         PcF6 *r) {
+  PcF2 u;
+  PcF2 v;
+  pc_f2_mul(f, &a->c, t1, &u);
+  pc_f2_mul(f, &a->b, t2, &v);
+  pc_f2_add(f, &u, &v, &u);
+  pc_f2_mul_xi(f, &u, &u);
+  pc_f2_mul(f, &a->a, t0, &v);
+  pc_f2_add(f, &u, &v, &u);
+  pc_f2_inv(f, &u, &u);
+  pc_f6_inv_scale(f, t0, t1, t2, &u, r);
+}
+
+/* t0 = a0^2 - xi a1 a2; t1 = xi a2^2 - a0 a1; t2 = a1^2 - a0 a2. */
+static void pc_f6_inv(const PcField *f, const PcF6 *a, PcF6 *r) {
+  PcF2 t[3];
+  PcF2 u;
+  pc_f2_sqr(f, &a->a, &t[0]);
+  pc_f2_mul(f, &a->b, &a->c, &u);
+  pc_f2_mul_xi(f, &u, &u);
+  pc_f2_sub(f, &t[0], &u, &t[0]);
+  pc_f2_sqr(f, &a->c, &t[1]);
+  pc_f2_mul_xi(f, &t[1], &t[1]);
+  pc_f2_mul(f, &a->a, &a->b, &u);
+  pc_f2_sub(f, &t[1], &u, &t[1]);
+  pc_f2_sqr(f, &a->b, &t[2]);
+  pc_f2_mul(f, &a->a, &a->c, &u);
+  pc_f2_sub(f, &t[2], &u, &t[2]);
+  pc_f6_inv_by(f, a, &t[0], &t[1], &t[2], r);
+}
+
+static int pc_f6_eq(const PcF6 *a, const PcF6 *b) {
+  return pc_f2_eq(&a->a, &b->a) && pc_f2_eq(&a->b, &b->b) && pc_f2_eq(&a->c, &b->c);
+}
+/* Fp12. (a + b w)(c + d w) = (a c + v b d) + (a d + b c) w. */
+static void pc_f12_one(const PcField *f, PcF12 *r) {
+  pc_f6_one(f, &r->a);
+  pc_f6_zero(&r->b);
+}
+
+static void pc_f12_mul(const PcField *f, const PcF12 *a, const PcF12 *b, PcF12 *r) {
+  PcF6 u;
+  PcF6 v;
+  PcF12 t;
+  pc_f6_mul(f, &a->a, &b->a, &u);
+  pc_f6_mul(f, &a->b, &b->b, &v);
+  pc_f6_mul_v(f, &v, &v);
+  pc_f6_add(f, &u, &v, &t.a);
+  pc_f6_mul(f, &a->a, &b->b, &u);
+  pc_f6_mul(f, &a->b, &b->a, &v);
+  pc_f6_add(f, &u, &v, &t.b);
+  *r = t;
+}
+
+static void pc_f12_sqr(const PcField *f, const PcF12 *a, PcF12 *r) {
+  pc_f12_mul(f, a, a, r);
+}
+
+static void pc_f12_conj(const PcField *f, const PcF12 *a, PcF12 *r) {
+  PcF12 t;
+  t.a = a->a;
+  pc_f6_neg(f, &a->b, &t.b);
+  *r = t;
+}
+
+/* f12InvBy a di: (a - b w) times di, the inverse of a^2 - v b^2. */
+static void pc_f12_inv_by(const PcField *f, const PcF12 *a, const PcF6 *di, PcF12 *r) {
+  PcF6 u;
+  PcF12 t;
+  pc_f6_mul(f, &a->a, di, &t.a);
+  pc_f6_mul(f, &a->b, di, &u);
+  pc_f6_neg(f, &u, &t.b);
+  *r = t;
+}
+
+static void pc_f12_inv(const PcField *f, const PcF12 *a, PcF12 *r) {
+  PcF6 u;
+  PcF6 v;
+  pc_f6_mul(f, &a->a, &a->a, &u);
+  pc_f6_mul(f, &a->b, &a->b, &v);
+  pc_f6_mul_v(f, &v, &v);
+  pc_f6_sub(f, &u, &v, &u);
+  pc_f6_inv(f, &u, &u);
+  pc_f12_inv_by(f, a, &u, r);
+}
+
+/* frobGk (k from 1 to 5) is pr_c_frob[k - 1]: c0, then c1. */
+static void pc_frob_g(uint32_t k, PcF2 *r) {
+  fe_copy(pr_c_frob[k - 1u][0], r->a);
+  fe_copy(pr_c_frob[k - 1u][1], r->b);
+}
+
+/* f12Frob a is a^p. The part at w^i becomes its conjugate times frobGi. */
+static void pc_f12_frob(const PcField *f, const PcF12 *a, PcF12 *r) {
+  PcF2 g;
+  PcF12 t;
+  pc_f2_conj(f, &a->a.a, &t.a.a);
+  pc_f2_conj(f, &a->a.b, &t.a.b);
+  pc_frob_g(2u, &g);
+  pc_f2_mul(f, &t.a.b, &g, &t.a.b);
+  pc_f2_conj(f, &a->a.c, &t.a.c);
+  pc_frob_g(4u, &g);
+  pc_f2_mul(f, &t.a.c, &g, &t.a.c);
+  pc_f2_conj(f, &a->b.a, &t.b.a);
+  pc_frob_g(1u, &g);
+  pc_f2_mul(f, &t.b.a, &g, &t.b.a);
+  pc_f2_conj(f, &a->b.b, &t.b.b);
+  pc_frob_g(3u, &g);
+  pc_f2_mul(f, &t.b.b, &g, &t.b.b);
+  pc_f2_conj(f, &a->b.c, &t.b.c);
+  pc_frob_g(5u, &g);
+  pc_f2_mul(f, &t.b.c, &g, &t.b.c);
+  *r = t;
+}
+
+/* f12PowFrom a e x is x^(2^n) a^e for the n bits of e (the top bit
+   first). f12Pow a e is a^e. */
+static void pc_f12_pow_from(const PcField *f, const PcF12 *a, const uint8_t *e, uint32_t n, const PcF12 *x,
+                            PcF12 *r) {
+  PcF12 t = *x;
+  uint32_t i = 0u;
+  while (i < n) {
+    pc_f12_sqr(f, &t, &t);
+    if (e[i] != 0)
+      pc_f12_mul(f, &t, a, &t);
+    i++;
+  }
+  *r = t;
+}
+
+static void pc_f12_pow(const PcField *f, const PcF12 *a, const uint8_t *e, uint32_t n, PcF12 *r) {
+  PcF12 one;
+  pc_f12_one(f, &one);
+  pc_f12_pow_from(f, a, e, n, &one, r);
+}
+
+static int pc_f12_eq(const PcF12 *a, const PcF12 *b) {
+  return pc_f6_eq(&a->a, &b->a) && pc_f6_eq(&a->b, &b->b);
+}
+
+/* The G1 point Pt1, and the G2 points Pt2 (affine) and Jac2 (Jacobian). */
+typedef struct {
+  uint32_t x[8];
+  uint32_t y[8];
+} PcPt1;
+
+typedef struct {
+  PcF2 x;
+  PcF2 y;
+} PcPt2;
+
+typedef struct {
+  PcF2 x;
+  PcF2 y;
+  PcF2 z;
+} PcJac2;
+
+/* p2Inf is the affine point at infinity (0, 0). */
+static void pc_p2_inf(PcPt2 *r) {
+  pc_f2_zero(&r->x);
+  pc_f2_zero(&r->y);
+}
+
+/* j2Inf is (1, 1, 0), the same as jac_infinity. */
+static void pc_j2_inf(const PcField *f, PcJac2 *r) {
+  pc_f2_one(f, &r->x);
+  pc_f2_one(f, &r->y);
+  pc_f2_zero(&r->z);
+}
+
+/* f2IsZero a is 1 when a is 0. */
+static int pc_f2_is_zero(const PcF2 *a) {
+  return fe_zero(a->a) && fe_zero(a->b);
+}
+
+/* f2MulFe a k is a k for the Fe k. */
+static void pc_f2_mul_fe(const PcField *f, const PcF2 *a, const uint32_t *k, PcF2 *r) {
+  PcF2 t;
+  fe_mul(f->md, f->n0, a->a, k, t.a);
+  fe_mul(f->md, f->n0, a->b, k, t.b);
+  *r = t;
+}
+
+/* j2Let, p2Let, lfLet and f12Let bind one value: each is a C local. */
+
+/* p2IsInf q is 1 when q is (0, 0). */
+static int pc_p2_is_inf(const PcPt2 *q) {
+  return pc_f2_is_zero(&q->x) && pc_f2_is_zero(&q->y);
+}
+
+/* p2Eq a b is 1 when a and b have the same coordinates. */
+static int pc_p2_eq(const PcPt2 *a, const PcPt2 *b) {
+  return pc_f2_eq(&a->x, &b->x) && pc_f2_eq(&a->y, &b->y);
+}
+
+/* p2OnCurve q is 1 when each of the 4 Fe of q is less than the modulus,
+   and q is the point at infinity or y^2 = x^3 + twistB. */
+static int pc_p2_on_curve(const PcField *f, const PcPt2 *q) {
+  PcF2 l;
+  PcF2 x2;
+  PcF2 b;
+  int in_range = fe_less(q->x.b, f->md) && fe_less(q->x.a, f->md) && fe_less(q->y.b, f->md)
+                 && fe_less(q->y.a, f->md);
+  if (!in_range)
+    return 0;
+  if (pc_p2_is_inf(q))
+    return 1;
+  pc_f2_sqr(f, &q->y, &l);
+  pc_f2_sqr(f, &q->x, &x2);
+  pc_f2_mul(f, &x2, &q->x, &x2);
+  fe_copy(pr_c_twist_b[0], b.a);
+  fe_copy(pr_c_twist_b[1], b.b);
+  pc_f2_add(f, &x2, &b, &x2);
+  return pc_f2_eq(&l, &x2);
+}
+
+/* p2Neg q is -q = (x, -y). */
+static void pc_p2_neg(const PcField *f, const PcPt2 *q, PcPt2 *r) {
+  PcPt2 t;
+  t.x = q->x;
+  pc_f2_neg(f, &q->y, &t.y);
+  *r = t;
+}
+
+/* p2Psi q is (conj(x) frobG2, conj(y) frobG3). */
+static void pc_p2_psi(const PcField *f, const PcPt2 *q, PcPt2 *r) {
+  PcPt2 t;
+  PcF2 c;
+  PcF2 g;
+  pc_f2_conj(f, &q->x, &c);
+  pc_frob_g(2u, &g);
+  pc_f2_mul(f, &c, &g, &t.x);
+  pc_f2_conj(f, &q->y, &c);
+  pc_frob_g(3u, &g);
+  pc_f2_mul(f, &c, &g, &t.y);
+  *r = t;
+}
+
+/* p2ToJac q is (x, y, 1), and j2Inf for the point at infinity. */
+static void pc_p2_to_jac(const PcField *f, const PcPt2 *q, PcJac2 *r) {
+  PcJac2 t;
+  if (pc_p2_is_inf(q)) {
+    pc_j2_inf(f, r);
+    return;
+  }
+  t.x = q->x;
+  t.y = q->y;
+  pc_f2_one(f, &t.z);
+  *r = t;
+}
+
+/* j2Dbl t is 2 t: M = 3 X^2, S = 4 X Y^2, X3 = M^2 - 2 S,
+   Y3 = M (S - X3) - 8 Y^4, Z3 = 2 Y Z. It has no special case. */
+static void pc_j2_dbl(const PcField *f, const PcJac2 *t, PcJac2 *r) {
+  PcJac2 o;
+  PcF2 x2;
+  PcF2 m;
+  PcF2 y2;
+  PcF2 s;
+  PcF2 u;
+  PcF2 y8;
+  pc_f2_sqr(f, &t->x, &x2);
+  pc_f2_add(f, &x2, &x2, &m);
+  pc_f2_add(f, &m, &x2, &m);
+  pc_f2_sqr(f, &t->y, &y2);
+  pc_f2_mul(f, &t->x, &y2, &s);
+  pc_f2_add(f, &s, &s, &s);
+  pc_f2_add(f, &s, &s, &s);
+  pc_f2_sqr(f, &m, &u);
+  pc_f2_sub(f, &u, &s, &u);
+  pc_f2_sub(f, &u, &s, &o.x);
+  pc_f2_sqr(f, &y2, &y8);
+  pc_f2_add(f, &y8, &y8, &y8);
+  pc_f2_add(f, &y8, &y8, &y8);
+  pc_f2_sub(f, &s, &o.x, &u);
+  pc_f2_mul(f, &m, &u, &u);
+  pc_f2_add(f, &y8, &y8, &y8);
+  pc_f2_sub(f, &u, &y8, &o.y);
+  pc_f2_mul(f, &t->y, &t->z, &u);
+  pc_f2_add(f, &u, &u, &o.z);
+  *r = o;
+}
+
+/* j2AddGen t h rr is the general case of j2AddAff, with H = h and R = rr:
+   X3 = R^2 - H^3 - 2 X H^2, Y3 = R (X H^2 - X3) - Y H^3, Z3 = Z H. */
+static void pc_j2_add_gen(const PcField *f, const PcJac2 *t, const PcF2 *h, const PcF2 *rr,
+                          PcJac2 *r) {
+  PcJac2 o;
+  PcF2 h2;
+  PcF2 h3;
+  PcF2 xh2;
+  PcF2 u;
+  PcF2 v;
+  pc_f2_sqr(f, h, &h2);
+  pc_f2_mul(f, &h2, h, &h3);
+  pc_f2_mul(f, &t->x, &h2, &xh2);
+  pc_f2_sqr(f, rr, &u);
+  pc_f2_sub(f, &u, &h3, &u);
+  pc_f2_sub(f, &u, &xh2, &u);
+  pc_f2_sub(f, &u, &xh2, &o.x);
+  pc_f2_sub(f, &xh2, &o.x, &u);
+  pc_f2_mul(f, rr, &u, &u);
+  pc_f2_mul(f, &t->y, &h3, &v);
+  pc_f2_sub(f, &u, &v, &o.y);
+  pc_f2_mul(f, &t->z, h, &o.z);
+  *r = o;
+}
+
+/* j2AddAff t q is t + q for the affine point q: U = xQ Z^2, S2 = yQ Z^3,
+   H = U - X, R = S2 - Y. When H = 0, it is 2 t for R = 0, else j2Inf. */
+static void pc_j2_add_aff(const PcField *f, const PcJac2 *t, const PcPt2 *q, PcJac2 *r) {
+  PcF2 z2;
+  PcF2 z3;
+  PcF2 h;
+  PcF2 rr;
+  if (pc_p2_is_inf(q)) {
+    *r = *t;
+    return;
+  }
+  if (pc_f2_is_zero(&t->z)) {
+    pc_p2_to_jac(f, q, r);
+    return;
+  }
+  pc_f2_sqr(f, &t->z, &z2);
+  pc_f2_mul(f, &z2, &t->z, &z3);
+  pc_f2_mul(f, &q->x, &z2, &h);
+  pc_f2_mul(f, &q->y, &z3, &rr);
+  pc_f2_sub(f, &h, &t->x, &h);
+  pc_f2_sub(f, &rr, &t->y, &rr);
+  if (!pc_f2_is_zero(&h)) {
+    pc_j2_add_gen(f, t, &h, &rr, r);
+    return;
+  }
+  if (pc_f2_is_zero(&rr)) {
+    pc_j2_dbl(f, t, r);
+    return;
+  }
+  pc_j2_inf(f, r);
+}
+
+/* j2ToAff t is (X / Z^2, Y / Z^3) with one inverse, and p2Inf for Z = 0. */
+static void pc_j2_to_aff(const PcField *f, const PcJac2 *t, PcPt2 *r) {
+  PcPt2 o;
+  PcF2 zi;
+  PcF2 zi2;
+  PcF2 zi3;
+  if (pc_f2_is_zero(&t->z)) {
+    pc_p2_inf(r);
+    return;
+  }
+  pc_f2_inv(f, &t->z, &zi);
+  pc_f2_sqr(f, &zi, &zi2);
+  pc_f2_mul(f, &zi2, &zi, &zi3);
+  pc_f2_mul(f, &t->x, &zi2, &o.x);
+  pc_f2_mul(f, &t->y, &zi3, &o.y);
+  *r = o;
+}
+
+/* p2Add a b is a + b. */
+static void pc_p2_add(const PcField *f, const PcPt2 *a, const PcPt2 *b, PcPt2 *r) {
+  PcJac2 t;
+  pc_p2_to_jac(f, a, &t);
+  pc_j2_add_aff(f, &t, b, &t);
+  pc_j2_to_aff(f, &t, r);
+}
+
+/* lineFp12 c0 c1 c3 is the line value as a full Fp12:
+   (c0, 0, 0) + (c1, c3, 0) w. */
+static void pc_line_fp12(const PcF2 *c0, const PcF2 *c1, const PcF2 *c3, PcF12 *r) {
+  PcF12 o;
+  o.a.a = *c0;
+  pc_f2_zero(&o.a.b);
+  pc_f2_zero(&o.a.c);
+  o.b.a = *c1;
+  o.b.b = *c3;
+  pc_f2_zero(&o.b.c);
+  *r = o;
+}
+
+/* lineDbl p t is the tangent at t for the G1 point p, times Z3 Z^2:
+   M = 3 X^2, c3 = M X - 2 Y^2, c1 = -(M Z^2 xP), c0 = Z3 Z^2 yP with
+   Z3 = 2 Y Z. The step to 2 t is j2Dbl. */
+static void pc_line_dbl(const PcField *f, const PcPt1 *p, const PcJac2 *t, PcF12 *r) {
+  PcF2 x2;
+  PcF2 m;
+  PcF2 y2;
+  PcF2 z2;
+  PcF2 c3;
+  PcF2 c1;
+  PcF2 c0;
+  PcF2 u;
+  pc_f2_sqr(f, &t->x, &x2);
+  pc_f2_add(f, &x2, &x2, &m);
+  pc_f2_add(f, &m, &x2, &m);
+  pc_f2_sqr(f, &t->y, &y2);
+  pc_f2_sqr(f, &t->z, &z2);
+  pc_f2_mul(f, &m, &t->x, &c3);
+  pc_f2_add(f, &y2, &y2, &u);
+  pc_f2_sub(f, &c3, &u, &c3);
+  pc_f2_mul(f, &m, &z2, &c1);
+  pc_f2_mul_fe(f, &c1, p->x, &c1);
+  pc_f2_neg(f, &c1, &c1);
+  pc_f2_mul(f, &t->y, &t->z, &u);
+  pc_f2_add(f, &u, &u, &c0);
+  pc_f2_mul(f, &c0, &z2, &c0);
+  pc_f2_mul_fe(f, &c0, p->y, &c0);
+  pc_line_fp12(&c0, &c1, &c3, r);
+}
+
+/* lineAddBy p q rr t2 is the line value of lineAdd with R = rr and the sum
+   t2 = t + q: c0 = Z(t2) yP, c1 = -(R xP), c3 = R xQ - yQ Z(t2). */
+static void pc_line_add_by(const PcField *f, const PcPt1 *p, const PcPt2 *q, const PcF2 *rr,
+                           const PcJac2 *t2, PcF12 *r) {
+  PcF2 c0;
+  PcF2 c1;
+  PcF2 c3;
+  PcF2 u;
+  pc_f2_mul_fe(f, &t2->z, p->y, &c0);
+  pc_f2_mul_fe(f, rr, p->x, &c1);
+  pc_f2_neg(f, &c1, &c1);
+  pc_f2_mul(f, rr, &q->x, &c3);
+  pc_f2_mul(f, &q->y, &t2->z, &u);
+  pc_f2_sub(f, &c3, &u, &c3);
+  pc_line_fp12(&c0, &c1, &c3, r);
+}
+
+/* The guest lineAdd: lineAddBy of p, q, R = yQ Z^3 - Y and T + q
+   (j2AddAff). milAdd also computes T + q: the C does both, as the guest
+   does. */
+static void pc_line_add(const PcField *f, const PcPt1 *p, const PcPt2 *q, const PcJac2 *t, PcF12 *r) {
+  PcF2 z2;
+  PcF2 z3;
+  PcF2 yz;
+  PcF2 rr;
+  PcJac2 t2;
+  pc_f2_sqr(f, &t->z, &z2);
+  pc_f2_mul(f, &z2, &t->z, &z3);
+  pc_f2_mul(f, &q->y, &z3, &yz);
+  pc_f2_sub(f, &yz, &t->y, &rr);
+  pc_j2_add_aff(f, t, q, &t2);
+  pc_line_add_by(f, p, q, &rr, &t2, r);
+}
+
+/* The guest MilSt: the state of the Miller loop, the value F (msF) and the
+   point T (msT). */
+typedef struct {
+  PcF12 f;
+  PcJac2 t;
+} PcMil;
+
+/* The guest milDbl: F^2 times the line at T (lineDbl), and 2 T. */
+static void pc_mil_dbl(const PcField *f, const PcPt1 *p, const PcMil *s, PcMil *r) {
+  PcF12 a;
+  PcF12 l;
+  PcMil o;
+  pc_f12_sqr(f, &s->f, &a);
+  pc_line_dbl(f, p, &s->t, &l);
+  pc_f12_mul(f, &a, &l, &o.f);
+  pc_j2_dbl(f, &s->t, &o.t);
+  *r = o;
+}
+
+/* The guest milAdd: F times the line at T and q (lineAdd), and T + q. */
+static void pc_mil_add(const PcField *f, const PcPt1 *p, const PcPt2 *q, const PcMil *s, PcMil *r) {
+  PcF12 l;
+  PcMil o;
+  pc_line_add(f, p, q, &s->t, &l);
+  pc_f12_mul(f, &s->f, &l, &o.f);
+  pc_j2_add_aff(f, &s->t, q, &o.t);
+  *r = o;
+}
+
+/* The guest milBits: for each of the n bits of e, the top bit first, a
+   double step, then an add step for a 1 bit. */
+static void pc_mil_bits(const PcField *f, const PcPt1 *p, const PcPt2 *q, const uint8_t *e, uint32_t n,
+                        const PcMil *s, PcMil *r) {
+  PcMil o = *s;
+  for (uint32_t i = 0u; i < n; i++) {
+    pc_mil_dbl(f, p, &o, &o);
+    if (e[i] != 0u)
+      pc_mil_add(f, p, q, &o, &o);
+  }
+  *r = o;
+}
+
+/* The guest milTail: the F of 2 add steps, first with q1 = psi(q), then
+   with q2 = -psi(psi(q)). The guest computes the arguments left to right:
+   q2 is first, and psi(q) is computed 2 times. */
+static void pc_mil_tail(const PcField *f, const PcPt1 *p, const PcPt2 *q, const PcMil *s, PcF12 *r) {
+  PcPt2 a;
+  PcPt2 q2;
+  PcPt2 q1;
+  PcMil s1;
+  pc_p2_psi(f, q, &a);
+  pc_p2_psi(f, &a, &a);
+  pc_p2_neg(f, &a, &q2);
+  pc_p2_psi(f, q, &q1);
+  pc_mil_add(f, p, &q1, s, &s1);
+  pc_mil_add(f, p, &q2, &s1, &s1);
+  *r = s1.f;
+}
+
+/* The guest ptIsInf: 1 when p is (0, 0). */
+static int pc_pt_is_inf(const PcPt1 *p) {
+  return fe_zero(p->x) && fe_zero(p->y);
+}
+
+/* The guest miller (pairing_miller): f12One when p or q is the point at
+   infinity. Else milBits over the 64 bits of millerBits from (f12One, q),
+   then milTail. milBitsOf p is millerBits. */
+static void pc_miller(const PcField *f, const PcPt1 *p, const PcPt2 *q, PcF12 *r) {
+  PcMil s;
+  if (pc_pt_is_inf(p) || pc_p2_is_inf(q)) {
+    pc_f12_one(f, r);
+    return;
+  }
+  pc_f12_one(f, &s.f);
+  pc_p2_to_jac(f, q, &s.t);
+  pc_mil_bits(f, p, q, pr_c_miller, 64u, &s, &s);
+  pc_mil_tail(f, p, q, &s, r);
+}
+
+/* The guest finEasy (pairing_final_easy): with f1 = conj(a) / a, the value
+   is frob(frob(f1)) f1. */
+static void pc_fin_easy(const PcField *f, const PcF12 *a, PcF12 *r) {
+  PcF12 c;
+  PcF12 v;
+  PcF12 f1;
+  PcF12 g;
+  pc_f12_conj(f, a, &c);
+  pc_f12_inv(f, a, &v);
+  pc_f12_mul(f, &c, &v, &f1);
+  pc_f12_frob(f, &f1, &g);
+  pc_f12_frob(f, &g, &g);
+  pc_f12_mul(f, &g, &f1, r);
+}
+
+/* The guest finHardBy (pairing_final_hard after the 3 powers): fx = m^x,
+   fx2 = fx^x and fx3 = fx2^x. The operations are in the guest order. */
+static void pc_fin_hard_by(const PcField *f, const PcF12 *m, const PcF12 *fx, const PcF12 *fx2,
+                           const PcF12 *fx3, PcF12 *r) {
+  PcF12 mp;
+  PcF12 mp2;
+  PcF12 y0;
+  PcF12 y5;
+  PcF12 t0;
+  PcF12 t1;
+  PcF12 a;
+  PcF12 b;
+  pc_f12_frob(f, m, &mp);
+  pc_f12_frob(f, &mp, &mp2);
+  pc_f12_mul(f, &mp, &mp2, &a);
+  pc_f12_frob(f, &mp2, &b);
+  pc_f12_mul(f, &a, &b, &y0);
+  pc_f12_conj(f, fx2, &y5);
+  pc_f12_frob(f, fx3, &a);
+  pc_f12_mul(f, fx3, &a, &a);
+  pc_f12_conj(f, &a, &a);
+  pc_f12_sqr(f, &a, &a);
+  pc_f12_frob(f, fx2, &b);
+  pc_f12_mul(f, fx, &b, &b);
+  pc_f12_conj(f, &b, &b);
+  pc_f12_mul(f, &a, &b, &a);
+  pc_f12_mul(f, &a, &y5, &t0);
+  pc_f12_frob(f, fx, &a);
+  pc_f12_conj(f, &a, &a);
+  pc_f12_mul(f, &a, &y5, &a);
+  pc_f12_mul(f, &a, &t0, &a);
+  pc_f12_sqr(f, &a, &a);
+  pc_f12_frob(f, fx2, &b);
+  pc_f12_frob(f, &b, &b);
+  pc_f12_mul(f, &t0, &b, &b);
+  pc_f12_mul(f, &a, &b, &a);
+  pc_f12_sqr(f, &a, &t1);
+  pc_f12_conj(f, m, &a);
+  pc_f12_mul(f, &t1, &a, &a);
+  pc_f12_sqr(f, &a, &a);
+  pc_f12_mul(f, &t1, &y0, &b);
+  pc_f12_mul(f, &a, &b, r);
+}
+
+/* The guest finHard (pairing_final_hard): fx = m^x, fx2 = fx^x and
+   fx3 = fx2^x over the 63 bits of bnXBits (finXBitsOf), then finHardBy. */
+static void pc_fin_hard(const PcField *f, const PcF12 *m, PcF12 *r) {
+  PcF12 fx;
+  PcF12 fx2;
+  PcF12 fx3;
+  pc_f12_pow(f, m, pr_c_x, 63u, &fx);
+  pc_f12_pow(f, &fx, pr_c_x, 63u, &fx2);
+  pc_f12_pow(f, &fx2, pr_c_x, 63u, &fx3);
+  pc_fin_hard_by(f, m, &fx, &fx2, &fx3, r);
+}
+
+/* The guest finalExp (pairing_final): finHard of finEasy. */
+static void pc_final_exp(const PcField *f, const PcF12 *a, PcF12 *r) {
+  PcF12 e;
+  pc_fin_easy(f, a, &e);
+  pc_fin_hard(f, &e, r);
+}
+
+/* The guest p2MulFrom (g2_mul, the ptMulWord form): for each of the n bits
+   of e, the top bit first, it doubles t, and a 1 bit then adds q. */
+static void pc_p2_mul_from(const PcField *f, const PcPt2 *q, const uint8_t *e, uint32_t n, const PcJac2 *t,
+                           PcJac2 *r) {
+  PcJac2 o = *t;
+  for (uint32_t i = 0u; i < n; i++) {
+    pc_j2_dbl(f, &o, &o);
+    if (e[i] != 0u)
+      pc_j2_add_aff(f, &o, q, &o);
+  }
+  *r = o;
+}
+
+/* The guest p2MulX: [x] q, p2MulFrom over the 63 bits of bnXBits
+   (p2XBitsOf) from j2Inf, then j2ToAff. */
+static void pc_p2_mul_x(const PcField *f, const PcPt2 *q, PcPt2 *r) {
+  PcJac2 t;
+  pc_j2_inf(f, &t);
+  pc_p2_mul_from(f, q, pr_c_x, 63u, &t, &t);
+  pc_j2_to_aff(f, &t, r);
+}
+
+/* The guest p2InSubBy (g2_in_subgroup for a = [x] q): with b = psi(a),
+   a1 = a + q, c = psi(b), d = (c + b) + a1 and e = psi(c), 1 when
+   e + e = d. Each p2SubLet is a C local. */
+static int pc_p2_in_sub_by(const PcField *f, const PcPt2 *q, const PcPt2 *a) {
+  PcPt2 b;
+  PcPt2 a1;
+  PcPt2 c;
+  PcPt2 d;
+  PcPt2 e;
+  pc_p2_psi(f, a, &b);
+  pc_p2_add(f, a, q, &a1);
+  pc_p2_psi(f, &b, &c);
+  pc_p2_add(f, &c, &b, &d);
+  pc_p2_add(f, &d, &a1, &d);
+  pc_p2_psi(f, &c, &e);
+  pc_p2_add(f, &e, &e, &e);
+  return pc_p2_eq(&e, &d);
+}
+
+/* The guest p2InSub (g2_in_subgroup): q is on the curve, and p2InSubBy
+   holds for a = [x] q. */
+static int pc_p2_in_sub(const PcField *f, const PcPt2 *q) {
+  PcPt2 a;
+  if (!pc_p2_on_curve(f, q))
+    return 0;
+  pc_p2_mul_x(f, q, &a);
+  return pc_p2_in_sub_by(f, q, &a);
+}
+
+/* The guest ptOnCurve fpMod p (sc_c_on_curve has the same operations). */
+static int pc_pt_on_curve(const PcField *f, const PcPt1 *p) {
+  return sc_c_on_curve(f->md, f->n0, f->r1, p->x, p->y);
+}
+
+/* The step of the guest pairInputsOk for one pair (p, q): p is on the
+   curve, and q is in the subgroup. The point at infinity passes both
+   checks. The walk of the pair list is in pairing_checkc. */
+static int pc_pair_input_ok(const PcField *f, const PcPt1 *p, const PcPt2 *q) {
+  if (!pc_pt_on_curve(f, p))
+    return 0;
+  return pc_p2_in_sub(f, q);
+}
+/* The step of the guest millerProdBy for one pair (p, q) at the
+   accumulator a: m = miller p q, then r = f12Mul a m (the arguments of a
+   call left to right, then the call). The walk of the pair list is in
+   pairing_checkc: list order, from f12One (millerProd). */
+static void pc_miller_prod_step(const PcField *f, const PcPt1 *p, const PcPt2 *q, const PcF12 *a, PcF12 *r) {
+  PcF12 m;
+  PcF12 t;
+  pc_miller(f, p, q, &m);
+  pc_f12_mul(f, a, &m, &t);
+  *r = t;
+}
+
+/* The guest f12IsOne a: f12Eq a f12One (1 when a is f12One). */
+static int pc_f12_is_one(const PcField *f, const PcF12 *a) {
+  PcF12 one;
+  pc_f12_one(f, &one);
+  return pc_f12_eq(a, &one);
+}
+
+/* The PairList decode for pairingCheckC: no field ops and no charge. A stuck
+   node or a stuck field gives a stuck call in *out. */
+static int pc_dec_f2(Machine *m, Op op, const Value *v, const Value *const *a, uint32_t n, PcF2 *r, const Value **out) {
+  if (blocked(m, v, op, 0, 0, a, n, out))
+    return 0;
+  if (!val_is(v, OP_CTOR) || v->argc != 2u) {
+    *out = internal(m, "a pairingCheckC on a value that is not an Fp2");
+    return 0;
+  }
+  return fe_words(m, op, v->args[0], a, n, r->a, out) && fe_words(m, op, v->args[1], a, n, r->b, out);
+}
+
+static int pc_dec_pt1(Machine *m, Op op, const Value *v, const Value *const *a, uint32_t n, PcPt1 *p, const Value **out) {
+  if (blocked(m, v, op, 0, 0, a, n, out))
+    return 0;
+  if (!val_is(v, OP_CTOR) || v->argc != 2u) {
+    *out = internal(m, "a pairingCheckC on a point that is not a Pt1");
+    return 0;
+  }
+  return fe_words(m, op, v->args[0], a, n, p->x, out) && fe_words(m, op, v->args[1], a, n, p->y, out);
+}
+
+static int pc_dec_pt2(Machine *m, Op op, const Value *v, const Value *const *a, uint32_t n, PcPt2 *q, const Value **out) {
+  if (blocked(m, v, op, 0, 0, a, n, out))
+    return 0;
+  if (!val_is(v, OP_CTOR) || v->argc != 2u) {
+    *out = internal(m, "a pairingCheckC on a point that is not a Pt2");
+    return 0;
+  }
+  return pc_dec_f2(m, op, v->args[0], a, n, &q->x, out) && pc_dec_f2(m, op, v->args[1], a, n, &q->y, out);
+}
+
+/* One PairList node. plCons: its pair goes in p and q, and its plNext in
+   *next. plEnd: *next is NULL. */
+static int pc_dec_node(Machine *m, Op op, const Value *v, const Value *const *a, uint32_t n, PcPt1 *p, PcPt2 *q,
+                       const Value **next, const Value **out) {
+  *next = NULL;
+  if (blocked(m, v, op, 0, 0, a, n, out))
+    return 0;
+  if (val_is(v, OP_CTOR) && v->argc == 0u)
+    return 1;
+  if (!val_is(v, OP_CTOR) || v->argc != 3u) {
+    *out = internal(m, "a pairingCheckC on a value that is not a PairList");
+    return 0;
+  }
+  *next = v->args[2];
+  return pc_dec_pt1(m, op, v->args[0], a, n, p, out) && pc_dec_pt2(m, op, v->args[1], a, n, q, out);
+}
+
+/* The first walk: decode each node and count the pairs, before the charge. */
+static int pc_count(Machine *m, Op op, const Value *const *a, uint32_t n, uint64_t *count, const Value **out) {
+  const Value *v = a[0];
+  PcPt1 p;
+  PcPt2 q;
+  *count = 0u;
+  while (v != NULL) {
+    if (!pc_dec_node(m, op, v, a, n, &p, &q, &v, out))
+      return 0;
+    *count += v != NULL ? 1u : 0u;
+  }
+  return 1;
+}
+
+/* pairInputsOk (domain.lang): the elim does the tail before the head, thus
+   the last pair is checked first, then each earlier pair. A fail does not
+   stop the walk. *ok is 0 if a pair fails. The charge sets the depth limit
+   (13 pairs with all the fuel, 12 after the check of pairing.lang). */
+static int pc_inputs_ok(const PcField *f, Machine *m, Op op, const Value *v, const Value *const *a, uint32_t n, int *ok,
+                        const Value **out) {
+  const Value *next;
+  PcPt1 p;
+  PcPt2 q;
+  if (!pc_dec_node(m, op, v, a, n, &p, &q, &next, out))
+    return 0;
+  if (next == NULL)
+    return 1;
+  if (!pc_inputs_ok(f, m, op, next, a, n, ok, out))
+    return 0;
+  *ok = pc_pair_input_ok(f, &p, &q) && *ok;
+  return 1;
+}
+
+/* millerProdBy (domain.lang): from f12One, one step for each pair, in list
+   order. */
+static int pc_miller_prod(const PcField *f, Machine *m, Op op, const Value *v, const Value *const *a, uint32_t n,
+                          PcF12 *acc, const Value **out) {
+  PcPt1 p;
+  PcPt2 q;
+  pc_f12_one(f, acc);
+  while (v != NULL) {
+    if (!pc_dec_node(m, op, v, a, n, &p, &q, &v, out))
+      return 0;
+    if (v != NULL)
+      pc_miller_prod_step(f, &p, &q, acc, acc);
+  }
+  return 1;
+}
+
+/* pairingCheckC l in C (DESIGN.md, D5). The guest pairingCheck (domain.lang)
+   is the specification: the C does its field ops on the same Words, in the
+   same order. First pairInputsOk: the last pair first, then each earlier
+   pair; a fail does not stop the walk. If a pair fails, the result is inl
+   unit, with no Miller loop and no final power. Else millerProd from f12One
+   in list order, then finalExp, then the f12 one test: inr unit for 1, else
+   inl unit. The charge uses the feMulC unit: 64 for each field product, 8
+   for each feAdd, feSub or feNeg; feInv over fpE is 364 products. Each pair:
+   37255 products, 34868 feAdd, 13046 feSub and 223 feNeg, that is 37255 x 64
+   + 48137 x 8 = 2769416 steps. The final part: 42808 products, 51943 feAdd,
+   13262 feSub and 103 feNeg, that is 42808 x 64 + 65308 x 8 = 3262176 steps.
+   For n pairs the charge is n x 2769416 + 3262176 steps. All of it is spent
+   once, before the work. With all of EVAL_FUEL_STEPS one call can do 13
+   pairs at most. `langc eval` sets the fuel once, before the check, thus the
+   check of the program uses the same fuel first: after the 2169939 check
+   steps of test/crypto/pairing.lang under --kit, one call can do 12 pairs at
+   most. The charge also sets the depth limit of the pairInputsOk walk. A
+   stuck node or a stuck field of l gives a stuck call. */
+#define PC_C_PAIR 2769416u
+#define PC_C_FINAL 3262176u
+
+static const Value *pairing_checkc(Machine *m, Op op, const Value *const *a, uint32_t n) {
+  const Value *out = NULL;
+  const Value *fp;
+  PcField f;
+  PcF12 acc;
+  uint32_t md[8];
+  uint32_t r1[8];
+  uint64_t count;
+  int ok = 1;
+  if (!pc_count(m, op, a, n, &count, &out))
+    return out;
+  fp = domain_def(m, "fpMod");
+  if (fp == NULL)
+    return NULL;
+  if (!val_is(fp, OP_CTOR) || fp->argc != 5u || fp->args[1]->kind != VAL_WORD)
+    return internal(m, "a pairingCheckC on a domain where fpMod is not a FeMod");
+  if (!fe_words(m, op, fp->args[0], a, n, md, &out) || !fe_words(m, op, fp->args[3], a, n, r1, &out))
+    return out;
+  if (!spend(m, count * PC_C_PAIR + PC_C_FINAL))
+    return NULL;
+  f.m = m;
+  f.md = md;
+  f.n0 = (uint32_t)fp->args[1]->nat;
+  f.r1 = r1;
+  f.e = fp->args[4];
+  if (!pc_inputs_ok(&f, m, op, a[0], a, n, &ok, &out))
+    return out;
+  if (ok) {
+    if (!pc_miller_prod(&f, m, op, a[0], a, n, &acc, &out))
+      return out;
+    pc_final_exp(&f, &acc, &acc);
+    ok = pc_f12_is_one(&f, &acc);
   }
   return make(m, VAL_OP, ok ? OP_INR : OP_INL, 0, 1, constant(m, OP_UNIT_VAL), NULL, NULL);
 }
@@ -2839,6 +3927,7 @@ static const Value *transp_data(Machine *m, const Value *head, const Value *line
   case OP_PT_MULC:
   case OP_POSEIDON2C:
   case OP_SCHNORRCHECKC:
+  case OP_PAIRINGCHECKC:
   case OP_OPAQUE:
   case OP_W_EQ:
   case OP_NAT_SUB:
@@ -3840,6 +4929,8 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return poseidon2c(m, op, a, n);
   case OP_SCHNORRCHECKC:
     return schnorr_checkc(m, op, a, n);
+  case OP_PAIRINGCHECKC:
+    return pairing_checkc(m, op, a, n);
   case OP_W_EQ:
     return word_test(m, op, a, n, w_eq);
   case OP_NONZERO_OF:

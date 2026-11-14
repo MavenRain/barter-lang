@@ -97,8 +97,8 @@ struct IrStmt {
   size_t arm_count;
 };
 
-/* The largest heap bound: 1 GiB of 8-byte words, the arena limit of langc
-   eval. */
+/* The largest heap bound: 1 GiB of 8-byte words. It was the arena limit of
+   langc eval before S8c u3b (the arena is 2 GiB, Q-S8c-12 (a)). */
 #define IR_HEAP_WORDS_MAX ((uint64_t)1 << 27)
 
 /* One exported entry. The body block ends in RETURN on each path. */

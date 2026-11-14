@@ -211,6 +211,19 @@ while IFS= read -r line; do
 done <"$tmp/crypto.txt"
 echo "crypto oracle: $crypto rows, $cryptobad mismatches"
 
+# The fuel row of the pairing rows (S8c u4): prPccFuel has 14 pairs. In the
+# 40000000 steps of `langc eval`, the check of pairing.lang uses 2169939 and
+# one call of pairingCheckC can then do 12 pairs at most. On the args of the
+# first prPcc0 row of build/cryptotool, `langc --kit eval` must exit 1 and
+# print `langc: EVAL_FUEL: prPccFuel: ...` on stderr.
+args=$(awk '$2 == "prPcc0" { print $3; exit }' "$tmp/crypto.txt")
+status=0
+build/langc --kit eval test/crypto/pairing.lang prPccFuel $args 2>"$tmp/err" >/dev/null || status=$?
+case "$status:$(head -n 1 "$tmp/err")" in
+  "1:langc: EVAL_FUEL: prPccFuel: "*) echo "pairing fuel: prPccFuel exit 1, EVAL_FUEL" ;;
+  *) echo "FAIL eval pairing prPccFuel $args: want exit 1 and EVAL_FUEL, got exit $status: $(head -n 1 "$tmp/err")"; fail=$((fail + 1)) ;;
+esac
+
 # The Poseidon constants (S8b2, Q-S8b-5 (a), Q-S8b2-17 (a)): the print of
 # build/poseidongen must be the lines of domain/domain.lang from `def psM00`
 # to the last line of psAll.
@@ -235,6 +248,30 @@ else
   fail=$((fail + 1))
 fi
 
+# The pairing constants (S8c, Q-S8c-2 (a)): the print of build/pairinggen
+# must be the lines of domain/domain.lang from `def frobG1` to
+# `def bnXBits`.
+status=0
+build/pairinggen >"$tmp/pr-gen.txt" 2>"$tmp/err" || status=$?
+awk '/^def frobG1 :/{on=1} on{print} on && /^def bnXBits :/{exit}' domain/domain.lang >"$tmp/pr-dom.txt"
+if [ "$status" -eq 0 ] && [ -s "$tmp/pr-gen.txt" ] && cmp -s "$tmp/pr-gen.txt" "$tmp/pr-dom.txt"; then
+  echo "pairing constants: $(wc -l <"$tmp/pr-gen.txt" | tr -d ' ') lines, same as domain/domain.lang"
+else
+  echo "FAIL pairing constants: build/pairinggen exit $status, the print is not the domain text"
+  fail=$((fail + 1))
+fi
+
+# The pairing table of pairingCheckC (S8c, Q-S8c-2 (a)): the print of
+# `build/pairinggen c` must be src/front/pairing_c.h.
+status=0
+build/pairinggen c >"$tmp/pr-c.txt" 2>"$tmp/err" || status=$?
+if [ "$status" -eq 0 ] && [ -s "$tmp/pr-c.txt" ] && cmp -s "$tmp/pr-c.txt" src/front/pairing_c.h; then
+  echo "pairingCheckC table: $(wc -l <"$tmp/pr-c.txt" | tr -d ' ') lines, same as src/front/pairing_c.h"
+else
+  echo "FAIL pairingCheckC table: build/pairinggen c exit $status, the print is not src/front/pairing_c.h"
+  fail=$((fail + 1))
+fi
+
 # The Schnorr fixtures (S8b2, Q-S8b2-4 (a)): the print of `build/cryptotool
 # fixtures` must be the lines of domain/domain.lang from `-- @FIX@ begin` to
 # `-- @FIX@ end`.
@@ -245,6 +282,19 @@ if [ "$status" -eq 0 ] && [ -s "$tmp/fx-gen.txt" ] && cmp -s "$tmp/fx-gen.txt" "
   echo "fixtures: $(wc -l <"$tmp/fx-gen.txt" | tr -d ' ') lines, same as domain/domain.lang"
 else
   echo "FAIL fixtures: build/cryptotool fixtures exit $status, the print is not the domain text"
+  fail=$((fail + 1))
+fi
+
+# The pairing fixtures (S8c): the print of `build/cryptotool
+# pairing-fixtures` must be the lines of test/crypto/pairing.lang from
+# `-- @PFIX@ begin` to `-- @PFIX@ end`.
+status=0
+build/cryptotool pairing-fixtures >"$tmp/pf-gen.txt" 2>"$tmp/err" || status=$?
+awk '/^-- @PFIX@ begin/,/^-- @PFIX@ end/' test/crypto/pairing.lang >"$tmp/pf-src.txt"
+if [ "$status" -eq 0 ] && [ -s "$tmp/pf-gen.txt" ] && cmp -s "$tmp/pf-gen.txt" "$tmp/pf-src.txt"; then
+  echo "pairing fixtures: $(wc -l <"$tmp/pf-gen.txt" | tr -d ' ') lines, same as test/crypto/pairing.lang"
+else
+  echo "FAIL pairing fixtures: build/cryptotool pairing-fixtures exit $status, the print is not the test text"
   fail=$((fail + 1))
 fi
 
@@ -310,6 +360,8 @@ echo "ir: $irs lowered"
 # (HOST-LIMIT, S8b2, USER ruling Q-S8b2-30 (a)).
 # scc.lang uses schnorrCheckC on run-time values: the Wasm host refuses it
 # (HOST-LIMIT, S8b2, USER ruling Q-S8b2-36 (a)).
+# pcc.lang uses pairingCheckC on run-time values: the Wasm host refuses it
+# (HOST-LIMIT, as schnorrCheckC).
 irrefusals=0
 ir_refused() {
   status=0
@@ -332,6 +384,7 @@ ir_refused hop.lang "REFUSE_LOWER: hopDepth: a recursive fold over a block of fa
 ir_refused ptmulc.lang "REFUSE_LOWER: irX: the Wasm host does not lower ptMulC (HOST-LIMIT)"
 ir_refused p2c.lang "REFUSE_LOWER: irX: the Wasm host does not lower poseidon2C (HOST-LIMIT)"
 ir_refused scc.lang "REFUSE_LOWER: irX: the Wasm host does not lower schnorrCheckC (HOST-LIMIT)"
+ir_refused pcc.lang "REFUSE_LOWER: irX: the Wasm host does not lower pairingCheckC (HOST-LIMIT)"
 echo "ir refusals: $irrefusals checked"
 
 # The IR lowerings (S3): `langc

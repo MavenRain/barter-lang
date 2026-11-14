@@ -17,18 +17,20 @@ operations, the governance layer, the laws, the four C programs and the
 request, verbatim. The swap design is `design/intent-swap-design.md`,
 verbatim. This file gives the readings of the request, the route, the
 slices and the open questions. "design sec N" is section N of
-`design/DESIGN.md`. Sections 1.2 to 1.12 list the questions for the USER,
+`design/DESIGN.md`. Sections 1.2 to 1.13 list the questions for the USER,
 and section 1.1 has the rulings.
 
-Status: S8b2 DONE (2026-11-11): the native field product `feMulC`,
-BN254 G1 with the native `ptMulC`, keccak-256, Poseidon with the native
-`poseidon2C`, the Schnorr check with the native `schnorrCheckC`, the
-message words, the domain fixtures, `opaque def`, and `Key` as a `Pt1`
-and `Sig` as R and s in `csHas` and `settle` (sections 4, 6, 10 and 13).
-Q-S4-1..4, Q-S5-1..10, Q-S6-1..6, Q-S7-1..7, Q-S8-1..4, Q-S8b-1..8 and
-Q-S8b2-1..7 are ruled (a). Sections 1.10 to 1.12 have the S8, S8b and
-S8b2 questions, all ruled. Q-S8b2-8..43 came up in the build; section
-1.1 has each ruling. Next: S8c (the crypto prelude part 2).
+Status: S8c DONE (2026-11-14): the fields `Fp2`, `Fp6` and `Fp12`,
+BN254 G2, the pairing product check with the native `pairingCheckC` and
+its guest specification, the C oracle with the EIP-197 vectors,
+`ENTRY_PARAMS_MAX` 512, the arena of 2 GiB, the fuel of 40000000 steps,
+the checker change of Q-S8c-14 and the run time of the pairing (OI-15)
+(sections 4, 10 and 13). Q-S4-1..4, Q-S5-1..10, Q-S6-1..6, Q-S7-1..7,
+Q-S8-1..4, Q-S8b-1..8, Q-S8b2-1..7 and Q-S8c-1..8 are ruled (a), but
+Q-S8c-6 is ruled (b). Sections 1.10 to 1.13 have the S8, S8b, S8b2 and
+S8c questions, all ruled. Q-S8b2-8..43 and Q-S8c-9..19 came up in the
+build; section 1.1 has each ruling. Next: S8c2 (the crypto prelude
+part 2, second commit).
 
 ## 1. Rulings and questions
 
@@ -177,6 +179,25 @@ S8b2 questions, all ruled. Q-S8b2-8..43 came up in the build; section
 | 2026-11-10 | Q-S8b2-41 "(a) Remove the 7 refl defs": a closed row that needs a Schnorr result has no refl def. The check keeps each `itMsg` and `smMsg` call stuck, also with closed arguments (Q-S8b2-38 (a)), thus `schnorrCheckC` is stuck in the check and such a row gives `PATH_END`. The 7 removed defs: `freshRefl`, `lowRefl`, `badCertRefl`, `poorRefl` and `spentAfterRefl` in `examples/spend.lang`; `certRow` and `dupRow` in `examples/params.lang`. The eval rows of `test/eval/expect.txt` carry each fact (`freshRow`, `lowRow`, `certFlag`, `dupFlag`, `badCertRow`, `poorRow`, `spentAfter`). Not chosen: (b) the check unfolds an opaque def on closed arguments (a kernel change; an estimate of 24M steps against the limit of 20M steps for `examples/spend.lang`, not measured). | USER, S8b2 |
 | 2026-11-11 | Q-S8b2-42 "(a) Full refresh (Recommended)": the gate table of `docs/host/README.md` was stale at the S8b2 close (8 counts, and 10 gate lines with no row). The close updates the 8 stale counts with their row texts and adds the 10 rows, each from the gate log and `test/gate.sh`. The table has 29 rows. Not chosen: (b) "Counts only" (the 8 counts; a section 13 open item for the 10 lines); (c) "No edit at S8b2" (one section 13 open item). | USER, S8b2 |
 | 2026-11-11 | Q-S8b2-43 "(a) Add the infinity row (Recommended)": the 7 `scTwin` rows of `schnorrCheckC` did not test R = the point at infinity and R = e P. One new `scTwin` row has R at infinity (`sc_inf_row` in `test/cryptotool.c`): s = e k mod r for key 3 on the Fill message, with e = the challenge of ((0, 0), P, m). `ptOnCurve` accepts (0, 0), and `schnorrCheck` and `schnorrCheckC` accept this input (measured at S8b2; the row pins only that the two results are equal). The crypto oracle has 506 rows. The header of `test/crypto/schnorr.lang` says why no row has R = e P: such an input needs a value e that is equal to keccak256(e P, P, m) mod r (a fixed point of the hash). Not chosen: (b) "Sentence and open item" (no row; a header sentence and a section 13 open item); (c) "No change". | USER, S8b2 |
+| 2026-11-11 | Q-S8c-1 "(a) Two: S8c pairing, S8c2 verifier (Recommended)": S8c is the fields Fp2, Fp6 and Fp12, G2, the pairing product check (the C oracle, the guest specification, the rows) and the OI-15 measure of the pairing. S8c2 is the Noir verifier, the fixture proofs, the settle proof check and `badShare`, after its own survey. Where an earlier line of section 1 names S8c for the Noir verifier, the share check, the proof or the hash value of the `Nat` ids, read S8c2. Edits: section 3 (`badShare`), 12 (rows S8c and S8c2), 13 (OI-15). | USER, S8c |
+| 2026-11-11 | Q-S8c-2 "(a) New C + EIP-197 vectors (Recommended)": quorum-lang 8d1a113 has no pairing code, thus the pairing oracle is new C in `src/crypto` (Fp2, Fp6, Fp12, G2, the optimal ate pairing) in the style of `bn254.c`. The rows: bilinearity, e(P, Q) e(-P, Q) = 1, the refusals for a point off its curve and for a G2 point outside the subgroup of order r, and the public EIP-197 pairing check vectors (the Ethereum precompile at address 8) as an independent source. Edits: section 4. | USER, S8c |
+| 2026-11-11 | Q-S8c-3 "(a) Native pairingCheckC + guest spec (Recommended)": `pairingCheckC` is one native operation for the product check of a list of pairs: yes when the product of e(Pi, Qi) is 1; no for a point off its curve or for a G2 point outside the subgroup of order r. The charge is fixed, in the `feMulC` unit: one part for each pair and one part for the final exponentiation. The guest `pairingCheck` is the specification; twin rows compare the two; `langc ir` refuses the native operation (`REFUSE_LOWER`). OI-15 measures the two. Estimates before the build, not measured: one pairing is about 21000 Fp products and 70000 Fp additions; guest code only is about 233M steps; the native charge is about 1.9M steps for one pairing and 2.6M steps for a check of 2 pairs. | USER, S8c |
+| 2026-11-11 | Q-S8c-4 "(a) Rule it at the verifier survey (Recommended)": no proof system is ruled at S8c. S8c2 starts with a survey of the verifier of the Noir back end at a pinned version, with measured sizes and a step count, then asks. The pairing does not depend on the answer: each candidate uses only the pairing product check. | USER, S8c |
+| 2026-11-11 | Q-S8c-5 "(a) Step rows on fixture states (Recommended)": the guest specification of the pairing check is a chain of small defs (the tower operations, the line double, the line add, the Frobenius maps, the power by a bit list, the easy part, the input checks). `cryptotool` prints fixture defs (real states of an oracle run on the EIP-197 pairs) into test/crypto/pairing.lang between markers, and a gate row compares the print with the text. Each def of the chain has at least 1 row against the oracle. Whole rows compare `pairingCheckC` with the oracle. Limit: the whole guest `pairingCheck` does not run in the gate (about 233M steps by estimate, above the 20M fuel). | USER, S8c |
+| 2026-11-11 | Q-S8c-6 "(b) Endomorphism check": the G2 subgroup check compares psi(Q) with a product of Q by a multiple of x, where psi is the untwist, Frobenius, twist map. It is not the recommended option. The exact formula has an oracle self check: the oracle tests the formula against r Q = infinity on subgroup points and on twist points outside the subgroup. The charge estimate is about 3.3M steps for 2 pairs and about 12.0M for 10 pairs. | USER, S8c |
+| 2026-11-11 | Q-S8c-7 "(a) Plain loop, x chain (Recommended)": the Miller loop uses the binary bits of 6x + 2 as a constant list (64 doubles, 36 adds), one loop for each pair, and plain Fp12 squares. The hard part of the final power uses the standard chain of 3 powers by x. The oracle tests the chain result against the plain power by the exact exponent of the chain. | USER, S8c |
+| 2026-11-11 | Q-S8c-8 "(a) No limit, the fuel stops (Recommended)": the pair count has no constant limit and no new refusal. A list above the fuel gives `EVAL_FUEL`. One row shows `EVAL_FUEL` for a long list of infinity pairs. | USER, S8c |
+| 2026-11-11 | Q-S8c-9 "(a) Raise ENTRY_PARAMS_MAX to 128 (Recommended)": an entry takes at most 128 parameters (64 before). An Fp12 value is 96 Words (12 Fe of 8 Words), thus an Fp12 row of `test/crypto/pairing.lang` has 96 Word parameters. A Jac2 row or an Fp12 row of the Miller loop also has 96. | USER, S8c |
+| 2026-11-11 | Q-S8c-10 (a) (Recommended): the Miller loop state is the family `MilSt := milSt (msF : Fp12) (msT : Jac2)` (D3b): the Fp12 value F and the G2 point T in Jacobian form. Before each row, `langc eval` loads the domain text and evaluates each domain def below its binders. An elim on a variable stops this evaluation. With the constant bit list `millerBits` in its body, `miller` made the load unroll the 64 steps of `milBits`, and each `langc eval` stopped with `OOM`. The guard `milBitsOf p` is an elim on the point p that gives `millerBits`, and `miller` uses it: the load stops at the elim. There is no C, engine or signature change. `finXBitsOf` (the bits of x for `finHard`) and `p2XBitsOf` (the bits of x for `p2MulX`) are guards of the same form. Not chosen: (b) `miller` takes the bits as a parameter (each caller gives `millerBits`); (c) the load stops at binders (an `eval.c` change; the cost of each row can change). | USER, S8c |
+| 2026-11-11 | Q-S8c-11 "(a) Raise ENTRY_PARAMS_MAX to 256 (Recommended)": an entry takes at most 256 parameters (128 before). A Miller state row (`prMilDbl`, `prMilAdd`, `prMilBits`) of `test/crypto/pairing.lang` has 144 Word parameters: the Fp12 value F (96 Words), then the x, y and z values of the G2 point T (48 Words). Each earlier raise (16, 32, 64, 128) went to the next power of 2 above the need. The cost is the 2 int arrays of the entry struct. Not chosen: (b) "Raise it to 144" (the need of today only); (c) "Split the rows" (no engine change: 2 rows for each state, F with 96 Words and T with 48 Words). | USER, S8c |
+| 2026-11-11 | Q-S8c-12 "(a) Arena 2 GiB + fuel 40M (Recommended)": the arena limit of `langc` is 2 GiB (`ARENA_LIMIT_BYTES`, 1 GiB before) and the evaluation fuel is 40000000 steps (`EVAL_FUEL_STEPS`, 20000000 before). Reason: before each row, `langc eval` loads the domain text and evaluates each domain def below its binders. This work counts against the arena and the fuel of the row. The u3b defs (`milDbl`, `milAdd`, `milBits`, `milTail`, `milBitsOf`, `miller`) add 65.0 MB of arena to each row (measured on `frAdd`; `milBits` is 37.8 MB of it). Rows 5 and 6 of `fpPtGuest` then take 1107289232 and 1112401040 bytes, more than 1 GiB. With a 2 GiB arena, row 6 stops on `EVAL_FUEL` at 20M steps. `ENTRY_PARAMS_MAX` is not the cause: at 128 the arena bytes are the same. The Wasm heap bound (`IR_HEAP_WORDS_MAX`, 1 GiB) does not change. Not chosen: (b) a guard on each u3b def, as `milBitsOf` (12 MB of headroom; u3c and u3d need guards too); (c) cheaper inputs for rows 5 and 6 of `fpPtGuest` (weaker rows); (d) the load stops at binders (an `eval.c` change). | USER, S8c |
+| 2026-11-11 | Q-S8c-13 (a) (Recommended): the guard `pairExpOf : PairList -> (Fe -> Fe -> Fe) -> Fp12 -> Fp12` is an elim on the pair list l, and each case gives `finalExp`. `pairingCheck mul l` gives `no` when `pairInputsOk mul l` fails, else `f12IsOne (pairExpOf l mul (millerProd mul l))`. Reason: with `finalExp` in the body of `pairingCheck`, the load unrolled the 3 `f12Pow` passes of `finHard` below the binder l. This added 1434 MB of arena and 25.6M steps to each row, and row 6 of `fpPtGuest` stopped with `OOM`. With the guard (the Q-S8c-10 (a) form), the load adds 0.19 MB or less to a row. Not chosen: (b) `pairingCheckWith` takes the final power as a parameter; (c) no `pairingCheck` def (its rows move to the whole rows of `pairingCheckC`). The Q-S8c-5 limit stays: the 2 rows of `pairingCheck` are the refusal paths (P off the curve, Q outside the subgroup), and they do no final power. No row gets to the yes path, to a whole `finalExp` or to a whole Miller loop on 2 points that are not infinity. The whole rows of `pairingCheckC` compare the full check with the oracle. | USER, S8c |
+| 2026-11-12 | Q-S8c-14 (a) (Recommended): the checker does not evaluate an argument when the type that follows does not use it. The static `core_uses k d` of `src/front/check.c` gives 1 when the core term k has a variable with index d or more (below a binder of k, d goes up by 1). In `apply_rest`, when the codomain closure has no body or `core_uses body 0` gives 0, the closure gets a fresh variable. Else the closure gets the value of the argument, as before. Reason: before this change, `apply_rest` evaluated each argument. The evaluation unfolded the tower defs to neutral terms (`mul` is a variable), and an argument at depth d was evaluated d times. The kit check of `test/crypto/schnorr.lang` took 0.75 s of CPU and 767 to 848 MB of RSS. The commit before this change takes 0.27 to 0.33 s and 315 MB, and the limit is 1.2 times that commit. With this change, the check takes 0.84 times the CPU of that commit (A and B in turn on the same load) and 258 MB of RSS. The arena goes from 554 MB to 179 MB. `core_uses body 0` also gives 1 for a free variable of the environment: a wrong 1 costs time, not a wrong type. The gate gives EXIT 0 with the same 56 lines, and the crypto oracle gives 581 rows with 0 mismatches. Mutant rows: `>` for `>=` and a constant 0 make the kit check fail. A constant 1 and no depth step below binders pass the gate: they give more 1 results, thus they cost time only. No domain def changes, and there is no `opaque def`. Not chosen: (b) this change and an `opaque def` on `f2Mul`, `f6Mul`, `f12Mul`, `f12Inv` and `f12Frob` (0.77 times; the check of these 5 defs stops at their heads); (c) the `opaque def` route alone (1.21 times, above the limit). | USER, S8c |
+| 2026-11-12 | Q-S8c-15 (a): `ENTRY_PARAMS_MAX` is 512 (`src/front/check.h`; 256 before). Reason: an entry takes one parameter for each `Word`, and the 10-pair row `prPcc10` of `test/crypto/pairing.lang` takes 481 `Word` parameters. With 256, `langc` refused that row with `EVAL_ARGS` (the definition is not an entry), and a row could have 5 pairs at most. No gate row tests the limit. | USER, S8c |
+| 2026-11-12 | Q-S8c-16 (a): the row with a G2 point that is not on the twist is built by hand in `test/cryptotool.c`. `pc_raw_be` reads the 4 coordinates of Q with no twist check and no subgroup check. The want of the row comes from the C EIP-197 check: it gives -1 for this input, thus the row wants 0. The guest also gives 0, because `p2InSub` refuses Q. The row is a `prPcc1` row. | USER, S8c |
+| 2026-11-12 | Q-S8c-17 (a) (Recommended): the S8c measure of OI-15 times the pairing rows only: `prPcc0`, `prPcc1`, `prPcc2`, `prPcc3`, `prPcc10` and `prPccFuel`. The time of the Noir verifier waits for S8c2, because S8c has no verifier code. Not chosen: (b) also time a stand-in Groth16 shape (4 Miller loops, 1 final exponentiation, 4 `ptMulC`) made from the `prPcc` rows. | USER, S8c |
+| 2026-11-12 | Q-S8c-18 (a): text only, no change in behavior. A row of n pairs uses n x 2769416 + 3262176 steps and the guest steps, thus one call of `pairingCheckC` with all of `EVAL_FUEL_STEPS` (40000000) does 13 pairs at most. `langc eval` sets the fuel once, before the check, thus the check part uses the same fuel. For `test/crypto/pairing.lang` under `--kit` the check part is 2169939 steps, and one call does 12 pairs at most. No row has 13 pairs. | USER, S8c |
+| 2026-11-13 | Q-S8c-19 (a): the sentence of `docs/host/CAPABILITY.md` that `langc eval test/ir/spine.lang foldOnes 4294967296` stops with `OOM` is removed. It was stale: the check refuses that file with `REFUSE_FORMER`, thus the evaluation does not start. The arena sentence before it stays. Not chosen: (b) a new sentence with a command that stops with `OOM` at the 2 GiB arena. | USER, S8c |
 
 The seed is `bin/new-lang.sh barter-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -846,6 +867,90 @@ uses them. (Recommended) (b) A second prelude file
 `domain/crypto.lang`, embedded before `domain.lang` by `gen/embed.c`.
 RULED (a).
 
+### 1.13 Questions for the USER (S8c)
+
+S8c is the crypto prelude part 2 (section 12). The S8c survey measured
+these facts. quorum-lang 8d1a113 `src/crypto` has no pairing code and no
+verifier for a Noir back end: its proofs are Nova, Spartan and IPA. This
+plan and the design name no proof system for the Noir proofs. The tools
+`nargo` and `bb` are not on the build machine. The step counts below are
+estimates from the tower formulas and are not measured.
+
+Q-S8c-1 The S8c commits. Row S8c holds the pairing, the Noir verifier
+and the OI-15 run time, and the real Noir relations come at S12. (a) Two
+commits. S8c is the fields Fp2, Fp6 and Fp12, G2, the pairing product
+check (the C oracle, the guest specification, the rows) and the OI-15
+measure of the pairing. S8c2 is the Noir verifier, the fixture proofs,
+the settle proof check and `badShare`, after its own survey.
+(Recommended) (b) One commit with all of S8c. RULED (a).
+
+Q-S8c-2 The C oracle for the pairing. Section 4 names quorum-lang
+`src/crypto` as the reference (Q-S1-5 (a)), and it has no pairing.
+Algebra rows alone do not pin the result on public inputs. (a) New C in
+`src/crypto` in the style of `bn254.c`, with rows for bilinearity, for
+e(P, Q) e(-P, Q) = 1 and for the refusals, and the public EIP-197
+pairing check vectors as an independent source. (Recommended) (b) New C
+with algebra rows only. (c) A port of a public implementation, with a
+license note. RULED (a).
+
+Q-S8c-3 The form of the pairing in the prelude. One pairing is about
+21000 Fp products and 70000 Fp additions. Guest code only is about 233M
+steps, more than 11 times the 20M fuel. A guest tower on the native
+`feMulC` is about 42M steps. A native operation with a fixed charge in
+the `feMulC` unit is about 1.9M steps for one pairing and 2.6M steps for
+a check of 2 pairs. (a) One native operation `pairingCheckC` for the
+product check of a list of pairs, with the guest `pairingCheck` as the
+specification (the S8b2 pattern). (Recommended) (b) Two native
+operations, the Miller loop and the final exponentiation, on Fp12
+values. (c) Guest code only, with a higher fuel. RULED (a).
+
+Q-S8c-4 The proof system of the Noir verifier. Q-S0-14 (a) rules only
+that T2 exports Noir. The default Noir back end makes UltraHonk proofs
+(not checked against a source at S8c): its verifier has a sumcheck,
+about 70 G1 scalar products and one check of 2 pairs, and 70 scalar
+products at the `ptMulC` charge are about 25M steps, above the fuel.
+Groth16 is about 5.6M steps with 4 public inputs, and no official Noir
+back end makes Groth16 proofs. (a) No ruling at S8c. S8c2 starts with a
+survey of the verifier at a pinned version, then asks. (Recommended)
+(b) UltraHonk. (c) Groth16 on BN254. RULED (a).
+
+Q-S8c-5 The gate test of the guest specification. The whole guest
+`pairingCheck` is about 233M steps and about 14 times the arena by
+estimate: it cannot run in a row with the 20M fuel. One Fp12 value is
+96 Words and one pair is 48 Words, and a row has at most 64 argument
+Words. RULED (a) "Step rows on fixture states (Recommended)": the
+specification is a chain of small defs. `cryptotool` prints fixture
+defs (real states of an oracle run on the EIP-197 pairs) into
+test/crypto/pairing.lang between markers, and a gate row compares the
+print with the text. Each def of the chain has at least 1 row against
+the oracle. Whole rows compare `pairingCheckC` with the oracle. Limit:
+the whole guest `pairingCheck` does not run in the gate.
+
+Q-S8c-6 The G2 subgroup check method. The plain check r Q = infinity
+is about 9000 to 11000 Fp products for each Q by estimate. The
+endomorphism form is about 2200 to 3000. RULED (b) "Endomorphism
+check" (not the recommended option): the check compares psi(Q) with a
+product of Q by a multiple of x, where psi(x, y) = (conj(x) gx,
+conj(y) gy), gx = xi^((p - 1) / 3), gy = xi^((p - 1) / 2). The exact
+formula was not from a checked source at the ruling. It has an oracle
+self check: the oracle tests the formula against r Q = infinity on
+subgroup points and on twist points outside the subgroup. The charge
+estimate is about 3.3M steps for 2 pairs and about 12.0M for 10 pairs
+(the plain check: about 4.7M and about 18.8M).
+
+Q-S8c-7 The form of the specification. RULED (a) "Plain loop, x chain
+(Recommended)": the Miller loop uses the binary bits of 6x + 2 as a
+constant list (64 doubles, 36 adds), one loop for each pair, and plain
+Fp12 squares. The hard part of the final power uses the standard chain
+of 3 powers by x (about 11900 Fp products by estimate; a plain power
+is about 47900). The oracle tests the chain result against the plain
+power by the exact exponent of the chain.
+
+Q-S8c-8 The limit on the pair count. RULED (a) "No limit, the fuel
+stops (Recommended)": no constant and no new refusal. A list above the
+fuel gives `EVAL_FUEL`. One row shows `EVAL_FUEL` for a long list of
+infinity pairs.
+
 ## 2. The reading of R0: no runtime error
 
 R0 says that langc accepts no program that can lead to a runtime error.
@@ -917,7 +1022,7 @@ S6 (2026-11-07) builds the swap of design sec 4 at the end of
   `Outcome` of the kit is now `DaoOutcome` (Q-S4-2 (a)).
 - `Reason` has nine reasons. S6 uses `reused`, `expired`, `badPair`,
   `badProof` and `belowFloor`. `badCert`, `belowTMin` and `badPrice`
-  come with S7, and `badShare` comes with S8b.
+  come with S7, and `badShare` comes with S8c2 (Q-S8c-1 (a)).
 - `Spent` is a list of nullifiers, a stand-in for the ledger of S7
   (Q-S6-6 (a)).
 
@@ -1043,7 +1148,10 @@ BN254 pairing and the Noir verifier (Q-S0-6 (a), Q-S0-14 (a)), the TFHE
 share check with a Noir proof for each share (Q-S1-1 (a)), the MPC output
 check, the WRK rounds of one member (Q-S1-2 (a)) and ChaCha20 over the
 run seed (Q-S1-4 (a)). quorum-lang `src/crypto` is the reference and a C
-oracle in the gate (Q-S1-5 (a)). `barterd` has no crypto code.
+oracle in the gate (Q-S1-5 (a)). quorum-lang has no pairing code, thus
+the pairing oracle is new C in `src/crypto`, and the public EIP-197
+vectors are its independent source (Q-S8c-2 (a)). `barterd` has no
+crypto code.
 
 S8b (2026-11-08) builds the first part of the prelude. `Word` is a
 kernel type (`CORE_WORD`, `VAL_WORD`; Q-S8b-1 (a)): a uint32 that
@@ -1080,6 +1188,28 @@ check of `settle` is the Schnorr check of `itSig` by `itOwner` on the
 intent message (Q-S8b2-2 (a)). The message words `smMsg` and `itMsg`
 are opaque defs (Q-S8b2-38 (a)). The 6 keys and the 13 signatures of
 the examples are fixtures in the domain file (Q-S8b2-4 (a)).
+
+S8c (2026-11-14) builds the pairing (Q-S8c-1 (a)). The prelude gives
+the tower `Fp2`, `Fp6` and `Fp12` over `Fp`, G2 as `Pt2` (an affine
+point on the twist) and `Jac2` (a point in Jacobian form), and
+`PairList`, a list of pairs of a `Pt1` and a `Pt2`. The native
+operation `pairingCheckC` (Q-S8c-3 (a)) is a `VIS_WORD` builtin: it
+gives yes when the product of e(Pi, Qi) is 1, and no for a point off
+its curve or for a G2 point outside the subgroup of order r. Its charge
+is fixed: n x 2769416 + 3262176 steps for n pairs (Q-S8c-18 (a)).
+`langc ir` refuses it with `REFUSE_LOWER`. The guest def `pairingCheck`
+is its specification: a chain of small defs with step rows on fixture
+states (Q-S8c-5 (a)). The Miller loop uses the bits of 6x + 2 and plain
+`Fp12` squares, and the hard part of the final power uses 3 powers by x
+(Q-S8c-7 (a)). The G2 subgroup check `p2InSub` compares psi(Q) with a
+product of Q by a multiple of x (Q-S8c-6 (b)). The guards `milBitsOf`,
+`finXBitsOf`, `p2XBitsOf` and `pairExpOf` stop the load of the domain
+text at an elim (Q-S8c-10 (a), Q-S8c-13 (a)). The pair count has no
+limit: a list above the fuel gives `EVAL_FUEL` (Q-S8c-8 (a)).
+`ENTRY_PARAMS_MAX` is 512 (Q-S8c-9 (a), Q-S8c-11 (a), Q-S8c-15 (a)),
+the arena limit of `langc` is 2 GiB, and the fuel is 40000000 steps
+(Q-S8c-12 (a)). The checker does not evaluate an argument that the type
+after it does not use (Q-S8c-14 (a)).
 
 S5 (2026-11-06) builds the base types of design sec 3 at the end of
 `domain/domain.lang` (Q-S5-4 (a)). `Amount` and `Height` are unary
@@ -1505,6 +1635,19 @@ gate; logs that are kept come from a serial run.
   `p2c.lang` and `scc.lang` for the three native operations that
   `langc ir` refuses. `docs/host/README.md` has one table row for each
   gate line (Q-S8b2-42 (a)).
+- Pairing rows (S8c): `build/cryptotool` writes 600 rows: 360 on
+  `examples/crypto.lang`, 102 on `test/crypto/crypto.lang`, 10 on
+  `test/crypto/keccak.lang`, 94 on `test/crypto/pairing.lang`, 15 on
+  `test/crypto/poseidon.lang` and 19 on `test/crypto/schnorr.lang`.
+  `test/eip197.h` has the EIP-197 pairing vectors of go-ethereum v1.14.0
+  for the C oracle `src/crypto/pairing.c` (Q-S8c-2 (a)). One `prPcc1`
+  row has a G2 point that is not on the twist, made by hand in
+  `test/cryptotool.c` (Q-S8c-16 (a)). The gate row `pairing fuel` gives
+  `EVAL_FUEL` for `prPccFuel` (14 pairs). The gate rows `pairing
+  constants` (9 lines), `pairingCheckC table` (28 lines) and `pairing
+  fixtures` (35 lines) compare a generator print with its text in the
+  repository. The gate row `ir refusals` (10 files) adds
+  `test/ir/pcc.lang`, and `test/check/pc-c.lang` gives `REFUSE_WORD`.
 - Word rows (S8b): 35 eval rows in `test/eval/expect.txt`;
   `test/check/word-type.lang` and `test/check/word-op.lang` give
   `REFUSE_WORD`; `test/parse/word-range.lang` gives `LEX_WORD_RANGE`.
@@ -1562,7 +1705,8 @@ gate; logs that are kept come from a serial run.
 | S8 | Refusal codes, `check --json`, `langc fmt` | DONE (2026-11-08) |
 | S8b | The crypto prelude part 1 (Q-S0-17 (b)): `Word` and `REFUSE_WORD` (Q-S8b-1 (a)), the family rename to `SwapWord` (Q-S8b-2 (a)), the BN254 field `Fr` and `Fp` (Q-S8b-3 (a)), the C oracle rows (Q-S1-5 (a), Q-S8b-7 (a)) | DONE (2026-11-08) |
 | S8b2 | The crypto prelude part 1, second commit (Q-S8b-8 (a)): the native field product `feMulC` (Q-S8b-4 (a)), BN254 G1, Poseidon (Q-S0-13 (a), Q-S8b-5 (a)), keccak-256, the Schnorr check (OI-17, Q-S8b-6 (a)) in `csHas` | DONE (2026-11-11) |
-| S8c | The crypto prelude part 2 (Q-S1-1 (a)): the BN254 pairing and the Noir verifier (the T2 relations, the TFHE share proof); the run time (OI-15) | NEXT |
+| S8c | The crypto prelude part 2 (Q-S1-1 (a)), first commit (Q-S8c-1 (a)): the fields Fp2, Fp6 and Fp12, BN254 G2, the pairing product check `pairingCheckC` with its guest specification (Q-S8c-3 (a)), the C oracle with the EIP-197 vectors (Q-S8c-2 (a)); the run time of the pairing (OI-15) | DONE (2026-11-14) |
+| S8c2 | The crypto prelude part 2, second commit (Q-S8c-1 (a)): the survey and the ruling of the proof system (Q-S8c-4 (a)), the Noir verifier (the T2 relations, the TFHE share proof), the fixture proofs, the settle proof check, `badShare`; the run time of the verifier (OI-15) | |
 | S8d | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-4 (a)), the MPC output check | |
 | S9 | T1 lowering to one Wasm module with the prelude | |
 | S10 | `barterd` replay mode: the C99 interpreter (Q-S0-19 (a)), the ledger replay, the price answer to `langc serve` (Q-S1-7 (a)); no crypto code (Q-S0-17 (b)) | |
@@ -1616,8 +1760,15 @@ and S14b. S9 needs S8b to S8d.
   the WRK port are fixed at S14b (a question then). No sibling source.
 - OI-14 The TFHE parameters, the noise bound of a share and the threshold
   key generation are fixed at S13. The key generation is EXTERNAL (OI-9).
-- OI-15 The run time of the BN254 pairing and the Noir verifier in the
-  prelude under the C99 interpreter is not known. S8c measures it.
+- OI-15 The run time of the Noir verifier in the prelude under the C99
+  interpreter is not known. S8c2 measures it (Q-S8c-1 (a)). S8c measured
+  the pairing (Q-S8c-17 (a)): a `pairingCheckC` row of n pairs uses
+  n x 2769416 + 3262176 steps and the guest steps (3338 for 10 pairs),
+  and the kit check of `test/crypto/pairing.lang` uses 2169939 steps.
+  With the fuel limit raised for the measure, the median wall time is
+  0.38 s for 0 pairs, 0.92 s for 10 pairs and 1.07 s for 14 pairs
+  (42034539 steps), at a host load of 12 to 16. The max RSS is about
+  294 MB on each row, also with 0 pairs, thus the pairing does not set it.
 - OI-16 The reason for a lost link, a late message or a bad message in
   member mode is fixed at S14c.
 - OI-17 The signature scheme of `Sig` and of the certificates is not

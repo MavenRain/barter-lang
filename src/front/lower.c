@@ -658,6 +658,16 @@ static int sc_c(Low *l, Buf *b, const Value *v, Operand *out) {
   return refuse(l, "schnorrCheckC (HOST-LIMIT)");
 }
 
+/* The Wasm host does not lower pairingCheckC (HOST-LIMIT). The C builtin is
+   for the evaluator only. */
+static int pc_c(Low *l, Buf *b, const Value *v, Operand *out) {
+  (void)b;
+  (void)out;
+  if (v->argc != 1u)
+    return internal(l, "a pairingCheckC that does not take 1 argument");
+  return refuse(l, "pairingCheckC (HOST-LIMIT)");
+}
+
 /* A canonical value. An eliminator here has too few arguments, so it is a
    function. */
 static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
@@ -728,6 +738,7 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_PT_MULC:
   case OP_POSEIDON2C:
   case OP_SCHNORRCHECKC:
+  case OP_PAIRINGCHECKC:
   case OP_W_EQ:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
@@ -1365,6 +1376,8 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
     return p2c(l, b, v, out);
   case OP_SCHNORRCHECKC:
     return sc_c(l, b, v, out);
+  case OP_PAIRINGCHECKC:
+    return pc_c(l, b, v, out);
   case OP_OPAQUE:
     return internal(l, "an opaque head in the run path");
   case OP_W_EQ:

@@ -5,7 +5,7 @@
 
 #include "front/core.h"
 
-#define ENTRY_PARAMS_MAX 64u /* 16 before sealed-lang S2 (R23): slashUsr takes 19 words; 32 before S8b2 (Q-S8b-4 (a)): a Pt1 entry takes 16 Words, plus an Fr */
+#define ENTRY_PARAMS_MAX 512u /* 16 before sealed-lang S2 (R23): slashUsr takes 19 words; 32 before S8b2 (Q-S8b-4 (a)): a Pt1 entry takes 16 Words, plus an Fr; 64 before S8c (Q-S8c-9 (a)): an Fp12 row takes 96 Words; 128 before S8c u3b (Q-S8c-11 (a)): a MilSt row takes 144 Words; 256 before S8c u4 (Q-S8c-15 (a)): a 10-pair pairingCheckC row takes 481 Words */
 
 /* An entry: a program definition of type Nat, Flag, or a function of Nat and
    Flag arguments to a Nat or Flag result. */

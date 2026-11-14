@@ -12,7 +12,7 @@
 #include "front/base.h"
 
 #define EVAL_DEPTH_LIMIT 2000u
-#define EVAL_FUEL_STEPS 20000000u
+#define EVAL_FUEL_STEPS 40000000u /* 20000000u before S8c u3b (Q-S8c-12 (a)): the u3b domain load adds steps to each row; fpPtGuest row 6 stopped on EVAL_FUEL */
 
 /* The core names: type formers, constructors and operations. */
 typedef enum {
@@ -104,6 +104,7 @@ typedef enum {
   OP_PT_MULC, /* S8b2 (Q-S8b2-1 (a)): ptMulC md k p, a C builtin of the Word set */
   OP_POSEIDON2C, /* S8b2 (Q-S8b2-30 (a)): poseidon2C a b, a C builtin of the Word set */
   OP_SCHNORRCHECKC, /* S8b2 (Q-S8b2-36 (a)): schnorrCheckC p r s m, a C builtin of the Word set */
+  OP_PAIRINGCHECKC, /* pairingCheckC l, a C builtin of the Word set: the guest pairingCheck in C */
   OP_OPAQUE /* S8b2 (Q-S8b2-38 (a), Q-S8b2-40 (a)): the stuck head of an opaque def in the check; inst = the def index; a core does not hold it */
 } Op;
 

@@ -1097,6 +1097,394 @@ def fxWdSix1S : Fr := fe 0x317ca17ew 0x629e3671w 0xd74daee5w 0x5f6293c6w 0xcabdf
 def fxWdSix2R : Pt1 := pt1 (fe 0xd1cf9d72w 0x4f71f4a2w 0x5f44e3eew 0x30b06124w 0x4210f900w 0xe98af80aw 0xb3ba7ae7w 0x2d5ea22dw) (fe 0x723e1a52w 0x3caf8c51w 0xedc42ddaw 0x8b81d65ew 0xdeeb40bcw 0x51fffc61w 0x93c497c4w 0x2728eacaw)
 def fxWdSix2S : Fr := fe 0x9d7b0d9bw 0x108ce2a7w 0xdf0a0209w 0xd92360f2w 0x87dc9643w 0xcba266dcw 0xbc4ca1faw 0x2d2baa9fw
 -- @FIX@ end
+-- S8c (Q-S8c-2 (a)): the types of the BN254 pairing. Each Fe is in
+-- Montgomery form mod p, as in Pt1.
+-- An Fp2 is f2A + f2B u, with u^2 = -1.
+family Fp2 := fp2 (f2A : Fe) (f2B : Fe)
+-- An Fp6 is f6A + f6B v + f6C v^2, with v^3 = xi and xi = 9 + u.
+family Fp6 := fp6 (f6A : Fp2) (f6B : Fp2) (f6C : Fp2)
+-- An Fp12 is f12A + f12B w, with w^2 = v.
+family Fp12 := fp12 (f12A : Fp6) (f12B : Fp6)
+-- A Pt2 is a point of the twist y^2 = x^3 + 3 / xi over Fp2 in affine form.
+-- (0, 0) is the point at infinity (EIP-197).
+family Pt2 := pt2 (p2X : Fp2) (p2Y : Fp2)
+-- A Jac2 is a point (X, Y, Z) of the twist in Jacobian form: the affine
+-- point (X / Z^2, Y / Z^3). Z = 0 is the point at infinity.
+family Jac2 := jac2 (j2X : Fp2) (j2Y : Fp2) (j2Z : Fp2)
+-- A PairList is the input of the pairing check: one G1 point and one G2
+-- point in each node.
+family PairList := plEnd | plCons (plP : Pt1) (plQ : Pt2) (plNext : PairList)
+-- The pairing constants. Do not edit the 9 defs frobG1 to bnXBits:
+-- build/pairinggen prints them, and test/gate.sh compares the two.
+-- frobGn = g^n with g = xi^((p - 1) / 6). twistB = 3 / xi. g2Gen is the G2
+-- generator. millerBits holds the 64 bits of 6 x + 2 below its top bit 2^64.
+-- bnXBits holds the bits of x (x = 4965661367192848881). The top bit is
+-- first in each list.
+def frobG1 : Fp2 := fp2 (fe 0x33144907w 0xaf9ba696w 0x87afb78aw 0xca6b1d73w 0xf08a2087w 0x11bded5ew 0x1a1f3a7cw 0x02f34d75w) (fe 0x4c492d72w 0xa222ae23w 0x565de15bw 0xd00f02a4w 0x53dfc926w 0xdc2ff3a2w 0xb3899551w 0x10a75716w)
+def frobG2 : Fp2 := fp2 (fe 0x4563ab30w 0xb5773b10w 0xa9aa6454w 0x347f91c8w 0x242e0991w 0x7a007127w 0x118214ecw 0x1956bcd8w) (fe 0xa0aa4757w 0x6e849f1ew 0x89f89141w 0xaa1c7b6dw 0xfae0ca3aw 0xb6e713cdw 0x4e82ebc3w 0x26694fbbw)
+def frobG3 : Fp2 := fp2 (fe 0x2936b629w 0xe4bbdd0cw 0xe133bacbw 0xbb30f162w 0xf9645366w 0x31a9d1b6w 0xa500f8ddw 0x253570bew) (fe 0x5ffe77c7w 0xa1d77ce4w 0x7826d1dbw 0x07affd11w 0xbb7edc6bw 0x6d16bd27w 0x85defeccw 0x2c872002w)
+def frobG4 : Fp2 := fp2 (fe 0x843abe92w 0x7361d77fw 0x273411fbw 0xa5bb2bd3w 0x4b3e2399w 0x9c941f31w 0xbb9fd3ecw 0x15df9cddw) (fe 0x4bd8c949w 0x5dddfd15w 0xa4445b60w 0x62cb29a5w 0x0c7dd2b9w 0x37bc870aw 0x3171f0fdw 0x24830a9dw)
+def frobG5 : Fp2 := fp2 (fe 0x41690fe7w 0xc970692fw 0x27694b0bw 0xe2403421w 0x83c459e8w 0x32bee66bw 0x0ab08841w 0x12aabcedw) (fe 0x40aebfa9w 0x0d485d23w 0xab2fcc57w 0x05193418w 0x8a4910f5w 0xd3b0a40bw 0x35d2925aw 0x2f21ebb5w)
+def twistB : Fp2 := fp2 (fe 0x77b802a8w 0x3bf938e3w 0x3633535dw 0x020b1b27w 0x49755260w 0x26b7edf0w 0x4384a86dw 0x2514c632w) (fe 0xd1dcff67w 0x38e7ecccw 0x93ce0d3ew 0x65f0b37dw 0x22ac00aaw 0xd749d0ddw 0x4a688d4dw 0x0141b9cew)
+def g2Gen : Pt2 := pt2 (fp2 (fe 0x02bc2026w 0x8e83b5d1w 0x497b0172w 0xdceb1935w 0x97811adfw 0xfbb82647w 0xaf96503bw 0x19573841w) (fe 0xa84c6140w 0xafb4737dw 0x5802d8c4w 0x6043dd5aw 0x52a02f86w 0x09e950fcw 0x3aea7b6bw 0x14fef083w)) (fp2 (fe 0x886be9f6w 0x619dfa9dw 0xf59e9b78w 0xfe7fd297w 0x231b7dfew 0xff9e1a62w 0xae9e4206w 0x28fd7eebw) (fe 0xc71856eew 0x64095b56w 0x327d3cbbw 0xdc57f922w 0x33351076w 0x55f935bew 0x93fd6482w 0x0da4a0e6w))
+def millerBits : FeBits := fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbEnd))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def bnXBits : FeBits := fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbOne (fbEnd)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+-- S8c (Q-S8c-5 (a)): the tower of the BN254 pairing as a chain of small
+-- defs. Each def gives the value of the oracle function with the same name
+-- (src/crypto/pairing.c). A def that multiplies takes the field product mul
+-- as a parameter (the psPerm form): f2FeMulC is the native product and
+-- f2FeMulG is the guest feMul (the specification).
+def f2FeMulC : Fe -> Fe -> Fe := fun (a : Fe) (b : Fe) => feMulC fpMod a b
+def f2FeMulG : Fe -> Fe -> Fe := fun (a : Fe) (b : Fe) => feMul fpMod a b
+-- f2FeNeg a is -a. f2FeNine a is 9 a: 3 doubles, then one add.
+def f2FeNeg : Fe -> Fe := fun (a : Fe) => feSub fpMod feZero a
+def f2FeDbl : Fe -> Fe := fun (a : Fe) => feAdd fpMod a a
+def f2FeNine : Fe -> Fe := fun (a : Fe) => feAdd fpMod (f2FeDbl (f2FeDbl (f2FeDbl a))) a
+-- f2FeInv mul a is a^(p - 2) with the product mul (the fePowFrom form). It is
+-- the inverse of a when a is not 0, and 0 when a is 0.
+def f2FePowFrom : (Fe -> Fe -> Fe) -> Fe -> FeBits -> Fe -> Fe :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fe) (e : FeBits) => elim (fun (k : FeBits) => Fe -> Fe)
+    (fun (x : Fe) => x)
+    (fun (t : FeBits) (ih : Fe -> Fe) => fun (x : Fe) => ih (mul x x))
+    (fun (t : FeBits) (ih : Fe -> Fe) => fun (x : Fe) => ih (mul (mul x x) a)) e
+def f2FeInv : (Fe -> Fe -> Fe) -> Fe -> Fe :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fe) => f2FePowFrom mul a (modE fpMod) (modR1 fpMod)
+-- Fp2. f2One is 1 in Montgomery form.
+def f2Zero : Fp2 := fp2 feZero feZero
+def f2One : Fp2 := fp2 (modR1 fpMod) feZero
+def f2Add : Fp2 -> Fp2 -> Fp2 := fun (a : Fp2) (b : Fp2) => fp2 (feAdd fpMod (f2A a) (f2A b)) (feAdd fpMod (f2B a) (f2B b))
+def f2Sub : Fp2 -> Fp2 -> Fp2 := fun (a : Fp2) (b : Fp2) => fp2 (feSub fpMod (f2A a) (f2A b)) (feSub fpMod (f2B a) (f2B b))
+def f2Neg : Fp2 -> Fp2 := fun (a : Fp2) => fp2 (f2FeNeg (f2A a)) (f2FeNeg (f2B a))
+def f2Conj : Fp2 -> Fp2 := fun (a : Fp2) => fp2 (f2A a) (f2FeNeg (f2B a))
+-- (a0 + a1 u)(b0 + b1 u) = (a0 b0 - a1 b1) + (a0 b1 + a1 b0) u.
+def f2Mul : (Fe -> Fe -> Fe) -> Fp2 -> Fp2 -> Fp2 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp2) (b : Fp2) =>
+    fp2 (feSub fpMod (mul (f2A a) (f2A b)) (mul (f2B a) (f2B b))) (feAdd fpMod (mul (f2A a) (f2B b)) (mul (f2B a) (f2A b)))
+def f2Sqr : (Fe -> Fe -> Fe) -> Fp2 -> Fp2 := fun (mul : Fe -> Fe -> Fe) (a : Fp2) => f2Mul mul a a
+-- (9 + u)(a0 + a1 u) = (9 a0 - a1) + (a0 + 9 a1) u.
+def f2MulXi : Fp2 -> Fp2 := fun (a : Fp2) => fp2 (feSub fpMod (f2FeNine (f2A a)) (f2B a)) (feAdd fpMod (f2A a) (f2FeNine (f2B a)))
+-- f2Inv mul a is the conjugate of a divided by a0^2 + a1^2. f2InvBy takes
+-- the inverse ni of that sum.
+def f2InvBy : (Fe -> Fe -> Fe) -> Fp2 -> Fe -> Fp2 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp2) (ni : Fe) => fp2 (mul (f2A a) ni) (f2FeNeg (mul (f2B a) ni))
+def f2Inv : (Fe -> Fe -> Fe) -> Fp2 -> Fp2 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp2) => f2InvBy mul a (f2FeInv mul (feAdd fpMod (mul (f2A a) (f2A a)) (mul (f2B a) (f2B a))))
+def f2Eq : Fp2 -> Fp2 -> Sum Unit Unit := fun (a : Fp2) (b : Fp2) => feAll (feEq (f2A a) (f2A b)) (fun (u : Unit) => feEq (f2B a) (f2B b))
+-- Fp6.
+def f6Zero : Fp6 := fp6 f2Zero f2Zero f2Zero
+def f6One : Fp6 := fp6 f2One f2Zero f2Zero
+def f6Add : Fp6 -> Fp6 -> Fp6 := fun (a : Fp6) (b : Fp6) => fp6 (f2Add (f6A a) (f6A b)) (f2Add (f6B a) (f6B b)) (f2Add (f6C a) (f6C b))
+def f6Sub : Fp6 -> Fp6 -> Fp6 := fun (a : Fp6) (b : Fp6) => fp6 (f2Sub (f6A a) (f6A b)) (f2Sub (f6B a) (f6B b)) (f2Sub (f6C a) (f6C b))
+def f6Neg : Fp6 -> Fp6 := fun (a : Fp6) => fp6 (f2Neg (f6A a)) (f2Neg (f6B a)) (f2Neg (f6C a))
+-- c0 = a0 b0 + xi (a1 b2 + a2 b1); c1 = xi a2 b2 + a0 b1 + a1 b0;
+-- c2 = a0 b2 + a1 b1 + a2 b0.
+def f6Mul : (Fe -> Fe -> Fe) -> Fp6 -> Fp6 -> Fp6 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp6) (b : Fp6) =>
+    fp6 (f2Add (f2Mul mul (f6A a) (f6A b)) (f2MulXi (f2Add (f2Mul mul (f6B a) (f6C b)) (f2Mul mul (f6C a) (f6B b)))))
+      (f2Add (f2Add (f2MulXi (f2Mul mul (f6C a) (f6C b))) (f2Mul mul (f6A a) (f6B b))) (f2Mul mul (f6B a) (f6A b)))
+      (f2Add (f2Add (f2Mul mul (f6A a) (f6C b)) (f2Mul mul (f6B a) (f6B b))) (f2Mul mul (f6C a) (f6A b)))
+-- v (a0 + a1 v + a2 v^2) = xi a2 + a0 v + a1 v^2.
+def f6MulV : Fp6 -> Fp6 := fun (a : Fp6) => fp6 (f2MulXi (f6C a)) (f6A a) (f6B a)
+-- f6Inv: t0 = a0^2 - xi a1 a2; t1 = xi a2^2 - a0 a1; t2 = a1^2 - a0 a2;
+-- d = a0 t0 + xi (a2 t1 + a1 t2); the inverse is (t0, t1, t2) / d. f6InvBy
+-- takes t0, t1 and t2. f6InvScale takes the inverse di of d.
+def f6InvScale : (Fe -> Fe -> Fe) -> Fp2 -> Fp2 -> Fp2 -> Fp2 -> Fp6 :=
+  fun (mul : Fe -> Fe -> Fe) (t0 : Fp2) (t1 : Fp2) (t2 : Fp2) (di : Fp2) => fp6 (f2Mul mul t0 di) (f2Mul mul t1 di) (f2Mul mul t2 di)
+def f6InvBy : (Fe -> Fe -> Fe) -> Fp6 -> Fp2 -> Fp2 -> Fp2 -> Fp6 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp6) (t0 : Fp2) (t1 : Fp2) (t2 : Fp2) =>
+    f6InvScale mul t0 t1 t2 (f2Inv mul (f2Add (f2MulXi (f2Add (f2Mul mul (f6C a) t1) (f2Mul mul (f6B a) t2))) (f2Mul mul (f6A a) t0)))
+def f6Inv : (Fe -> Fe -> Fe) -> Fp6 -> Fp6 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp6) =>
+    f6InvBy mul a (f2Sub (f2Sqr mul (f6A a)) (f2MulXi (f2Mul mul (f6B a) (f6C a))))
+      (f2Sub (f2MulXi (f2Sqr mul (f6C a))) (f2Mul mul (f6A a) (f6B a)))
+      (f2Sub (f2Sqr mul (f6B a)) (f2Mul mul (f6A a) (f6C a)))
+def f6Eq : Fp6 -> Fp6 -> Sum Unit Unit := fun (a : Fp6) (b : Fp6) => feAll (f2Eq (f6A a) (f6A b)) (fun (u : Unit) => feAll (f2Eq (f6B a) (f6B b)) (fun (w : Unit) => f2Eq (f6C a) (f6C b)))
+-- Fp12. (a + b w)(c + d w) = (a c + v b d) + (a d + b c) w.
+def f12One : Fp12 := fp12 f6One f6Zero
+def f12Mul : (Fe -> Fe -> Fe) -> Fp12 -> Fp12 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp12) (b : Fp12) =>
+    fp12 (f6Add (f6Mul mul (f12A a) (f12A b)) (f6MulV (f6Mul mul (f12B a) (f12B b))))
+      (f6Add (f6Mul mul (f12A a) (f12B b)) (f6Mul mul (f12B a) (f12A b)))
+def f12Sqr : (Fe -> Fe -> Fe) -> Fp12 -> Fp12 := fun (mul : Fe -> Fe -> Fe) (a : Fp12) => f12Mul mul a a
+def f12Conj : Fp12 -> Fp12 := fun (a : Fp12) => fp12 (f12A a) (f6Neg (f12B a))
+-- f12Inv mul (a + b w) is (a - b w) / (a^2 - v b^2). f12InvBy takes the
+-- inverse di of that divisor.
+def f12InvBy : (Fe -> Fe -> Fe) -> Fp12 -> Fp6 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp12) (di : Fp6) => fp12 (f6Mul mul (f12A a) di) (f6Neg (f6Mul mul (f12B a) di))
+def f12Inv : (Fe -> Fe -> Fe) -> Fp12 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp12) => f12InvBy mul a (f6Inv mul (f6Sub (f6Mul mul (f12A a) (f12A a)) (f6MulV (f6Mul mul (f12B a) (f12B a)))))
+-- f12Frob mul a is a^p (the Frobenius map). The part at w^i becomes its
+-- conjugate times frobGi. The parts at w^0 to w^5 are f6A (f12A a),
+-- f6A (f12B a), f6B (f12A a), f6B (f12B a), f6C (f12A a) and f6C (f12B a).
+def f12Frob : (Fe -> Fe -> Fe) -> Fp12 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp12) =>
+    fp12 (fp6 (f2Conj (f6A (f12A a))) (f2Mul mul (f2Conj (f6B (f12A a))) frobG2) (f2Mul mul (f2Conj (f6C (f12A a))) frobG4))
+      (fp6 (f2Mul mul (f2Conj (f6A (f12B a))) frobG1) (f2Mul mul (f2Conj (f6B (f12B a))) frobG3) (f2Mul mul (f2Conj (f6C (f12B a))) frobG5))
+-- f12PowFrom mul a e x is x^(2^n) a^e for the n bits of e (the top bit
+-- first). f12Pow mul a e is a^e.
+def f12PowFrom : (Fe -> Fe -> Fe) -> Fp12 -> FeBits -> Fp12 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp12) (e : FeBits) => elim (fun (k : FeBits) => Fp12 -> Fp12)
+    (fun (x : Fp12) => x)
+    (fun (t : FeBits) (ih : Fp12 -> Fp12) => fun (x : Fp12) => ih (f12Sqr mul x))
+    (fun (t : FeBits) (ih : Fp12 -> Fp12) => fun (x : Fp12) => ih (f12Mul mul (f12Sqr mul x) a)) e
+def f12Pow : (Fe -> Fe -> Fe) -> Fp12 -> FeBits -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Fp12) (e : FeBits) => f12PowFrom mul a e f12One
+def f12Eq : Fp12 -> Fp12 -> Sum Unit Unit := fun (a : Fp12) (b : Fp12) => feAll (f6Eq (f12A a) (f12A b)) (fun (u : Unit) => f6Eq (f12B a) (f12B b))
+-- G2 points and the lines of the Miller loop. p2Inf is the affine point at
+-- infinity (0, 0). j2Inf is (1, 1, 0), the same as the C jac_infinity.
+def p2Inf : Pt2 := pt2 f2Zero f2Zero
+def j2Inf : Jac2 := jac2 f2One f2One f2Zero
+-- f2IsZero a is inr unit when a is 0. f2MulFe mul a k is a k for the Fe k.
+def f2IsZero : Fp2 -> Sum Unit Unit := fun (a : Fp2) => feAll (feIsZero (f2A a)) (fun (u : Unit) => feIsZero (f2B a))
+def f2MulFe : (Fe -> Fe -> Fe) -> Fp2 -> Fe -> Fp2 := fun (mul : Fe -> Fe -> Fe) (a : Fp2) (k : Fe) => fp2 (mul (f2A a) k) (mul (f2B a) k)
+-- j2Let x k, p2Let x k, lfLet x k and f12Let x k are k x. Each of the first
+-- 3 binds one Fp2 value. f12Let binds one Fp12 value.
+def j2Let : Fp2 -> (Fp2 -> Jac2) -> Jac2 := fun (x : Fp2) (k : Fp2 -> Jac2) => k x
+def p2Let : Fp2 -> (Fp2 -> Pt2) -> Pt2 := fun (x : Fp2) (k : Fp2 -> Pt2) => k x
+def lfLet : Fp2 -> (Fp2 -> Fp12) -> Fp12 := fun (x : Fp2) (k : Fp2 -> Fp12) => k x
+def f12Let : Fp12 -> (Fp12 -> Fp12) -> Fp12 := fun (x : Fp12) (k : Fp12 -> Fp12) => k x
+-- p2IsInf q is inr unit when q is (0, 0). p2Eq a b is inr unit when a and b
+-- have the same coordinates.
+def p2IsInf : Pt2 -> Sum Unit Unit := fun (q : Pt2) => feAll (f2IsZero (p2X q)) (fun (u : Unit) => f2IsZero (p2Y q))
+def p2Eq : Pt2 -> Pt2 -> Sum Unit Unit := fun (a : Pt2) (b : Pt2) => feAll (f2Eq (p2X a) (p2X b)) (fun (u : Unit) => f2Eq (p2Y a) (p2Y b))
+-- p2OnCurve mul q is inr unit when each of the 4 Fe of q is less than the
+-- modulus and q is the point at infinity or y^2 = x^3 + twistB.
+def p2OnCurve : (Fe -> Fe -> Fe) -> Pt2 -> Sum Unit Unit :=
+  fun (mul : Fe -> Fe -> Fe) (q : Pt2) =>
+    feAll (feLt (f2B (p2X q)) (modM fpMod)) (fun (u : Unit) =>
+    feAll (feLt (f2A (p2X q)) (modM fpMod)) (fun (u1 : Unit) =>
+    feAll (feLt (f2B (p2Y q)) (modM fpMod)) (fun (u2 : Unit) =>
+    feAll (feLt (f2A (p2Y q)) (modM fpMod)) (fun (u3 : Unit) =>
+    either (fun (u4 : Unit) => f2Eq (f2Sqr mul (p2Y q)) (f2Add (f2Mul mul (f2Sqr mul (p2X q)) (p2X q)) twistB))
+      (fun (u4 : Unit) => feYes)
+      (p2IsInf q)))))
+-- p2Neg q is -q = (x, -y). p2Psi mul q is (conj(x) frobG2, conj(y) frobG3).
+def p2Neg : Pt2 -> Pt2 := fun (q : Pt2) => pt2 (p2X q) (f2Neg (p2Y q))
+def p2Psi : (Fe -> Fe -> Fe) -> Pt2 -> Pt2 :=
+  fun (mul : Fe -> Fe -> Fe) (q : Pt2) => pt2 (f2Mul mul (f2Conj (p2X q)) frobG2) (f2Mul mul (f2Conj (p2Y q)) frobG3)
+-- p2ToJac q is (x, y, 1), and j2Inf for the point at infinity.
+def p2ToJac : Pt2 -> Jac2 :=
+  fun (q : Pt2) => either (fun (u : Unit) => jac2 (p2X q) (p2Y q) f2One) (fun (u : Unit) => j2Inf) (p2IsInf q)
+-- j2Dbl mul t is 2 t (g2_jac_double): M = 3 X^2, S = 4 X Y^2, X3 = M^2 - 2 S,
+-- Y3 = M (S - X3) - 8 Y^4, Z3 = 2 Y Z. It has no special case.
+def j2Dbl : (Fe -> Fe -> Fe) -> Jac2 -> Jac2 :=
+  fun (mul : Fe -> Fe -> Fe) (t : Jac2) =>
+    j2Let (f2Sqr mul (j2X t)) (fun (x2 : Fp2) =>
+    j2Let (f2Add (f2Add x2 x2) x2) (fun (m : Fp2) =>
+    j2Let (f2Sqr mul (j2Y t)) (fun (y2 : Fp2) =>
+    j2Let (f2Mul mul (j2X t) y2) (fun (s1 : Fp2) =>
+    j2Let (f2Add s1 s1) (fun (s2 : Fp2) =>
+    j2Let (f2Add s2 s2) (fun (s : Fp2) =>
+    j2Let (f2Sub (f2Sub (f2Sqr mul m) s) s) (fun (x3 : Fp2) =>
+    j2Let (f2Sqr mul y2) (fun (y4 : Fp2) =>
+    j2Let (f2Add y4 y4) (fun (y8a : Fp2) =>
+    j2Let (f2Add y8a y8a) (fun (y8b : Fp2) =>
+    j2Let (f2Sub (f2Mul mul m (f2Sub s x3)) (f2Add y8b y8b)) (fun (y3 : Fp2) =>
+    j2Let (f2Mul mul (j2Y t) (j2Z t)) (fun (yz : Fp2) =>
+    jac2 x3 y3 (f2Add yz yz)))))))))))))
+-- j2AddGen mul t h r is the general case of j2AddAff, with H = h and R = r:
+-- X3 = R^2 - H^3 - 2 X H^2, Y3 = R (X H^2 - X3) - Y H^3, Z3 = Z H.
+def j2AddGen : (Fe -> Fe -> Fe) -> Jac2 -> Fp2 -> Fp2 -> Jac2 :=
+  fun (mul : Fe -> Fe -> Fe) (t : Jac2) (h : Fp2) (r : Fp2) =>
+    j2Let (f2Sqr mul h) (fun (h2 : Fp2) =>
+    j2Let (f2Mul mul h2 h) (fun (h3 : Fp2) =>
+    j2Let (f2Mul mul (j2X t) h2) (fun (xh2 : Fp2) =>
+    j2Let (f2Sub (f2Sub (f2Sub (f2Sqr mul r) h3) xh2) xh2) (fun (x3 : Fp2) =>
+    jac2 x3 (f2Sub (f2Mul mul r (f2Sub xh2 x3)) (f2Mul mul (j2Y t) h3)) (f2Mul mul (j2Z t) h)))))
+-- j2AddAff mul t q is t + q for the affine point q (g2_jac_add_affine):
+-- U = xQ Z^2, S2 = yQ Z^3, H = U - X, R = S2 - Y. When H = 0, it is 2 t for
+-- R = 0, else j2Inf.
+def j2AddAff : (Fe -> Fe -> Fe) -> Jac2 -> Pt2 -> Jac2 :=
+  fun (mul : Fe -> Fe -> Fe) (t : Jac2) (q : Pt2) =>
+    either (fun (u : Unit) =>
+      either (fun (u1 : Unit) =>
+        j2Let (f2Sqr mul (j2Z t)) (fun (z2 : Fp2) =>
+        j2Let (f2Mul mul z2 (j2Z t)) (fun (z3 : Fp2) =>
+        j2Let (f2Mul mul (p2X q) z2) (fun (uu : Fp2) =>
+        j2Let (f2Mul mul (p2Y q) z3) (fun (s2 : Fp2) =>
+        j2Let (f2Sub uu (j2X t)) (fun (h : Fp2) =>
+        j2Let (f2Sub s2 (j2Y t)) (fun (r : Fp2) =>
+        either (fun (u2 : Unit) => j2AddGen mul t h r)
+          (fun (u2 : Unit) => either (fun (u3 : Unit) => j2Inf) (fun (u3 : Unit) => j2Dbl mul t) (f2IsZero r))
+          (f2IsZero h))))))))
+      (fun (u1 : Unit) => p2ToJac q)
+      (f2IsZero (j2Z t)))
+    (fun (u : Unit) => t)
+    (p2IsInf q)
+-- j2ToAff mul t is (X / Z^2, Y / Z^3) with one inverse (g2_jac_affine), and
+-- p2Inf for Z = 0.
+def j2ToAff : (Fe -> Fe -> Fe) -> Jac2 -> Pt2 :=
+  fun (mul : Fe -> Fe -> Fe) (t : Jac2) =>
+    either (fun (u : Unit) =>
+      p2Let (f2Inv mul (j2Z t)) (fun (zi : Fp2) =>
+      p2Let (f2Sqr mul zi) (fun (zi2 : Fp2) =>
+      p2Let (f2Mul mul zi2 zi) (fun (zi3 : Fp2) =>
+      pt2 (f2Mul mul (j2X t) zi2) (f2Mul mul (j2Y t) zi3)))))
+      (fun (u : Unit) => p2Inf)
+      (f2IsZero (j2Z t))
+-- p2Add mul a b is a + b (g2_add).
+def p2Add : (Fe -> Fe -> Fe) -> Pt2 -> Pt2 -> Pt2 :=
+  fun (mul : Fe -> Fe -> Fe) (a : Pt2) (b : Pt2) => j2ToAff mul (j2AddAff mul (p2ToJac a) b)
+-- lineFp12 c0 c1 c3 is the line value as a full Fp12 (fp12_mul_line):
+-- (c0, 0, 0) + (c1, c3, 0) w.
+def lineFp12 : Fp2 -> Fp2 -> Fp2 -> Fp12 :=
+  fun (c0 : Fp2) (c1 : Fp2) (c3 : Fp2) => fp12 (fp6 c0 f2Zero f2Zero) (fp6 c1 c3 f2Zero)
+-- lineDbl mul p t is the tangent at t for the G1 point p, times Z3 Z^2
+-- (pairing_line_double): M = 3 X^2, c3 = M X - 2 Y^2, c1 = -(M Z^2 xP),
+-- c0 = Z3 Z^2 yP with Z3 = 2 Y Z. The step to 2 t is j2Dbl.
+def lineDbl : (Fe -> Fe -> Fe) -> Pt1 -> Jac2 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (p : Pt1) (t : Jac2) =>
+    lfLet (f2Sqr mul (j2X t)) (fun (x2 : Fp2) =>
+    lfLet (f2Add (f2Add x2 x2) x2) (fun (m : Fp2) =>
+    lfLet (f2Sqr mul (j2Y t)) (fun (y2 : Fp2) =>
+    lfLet (f2Sqr mul (j2Z t)) (fun (z2 : Fp2) =>
+    lfLet (f2Sub (f2Mul mul m (j2X t)) (f2Add y2 y2)) (fun (c3 : Fp2) =>
+    lfLet (f2Neg (f2MulFe mul (f2Mul mul m z2) (ptX p))) (fun (c1 : Fp2) =>
+    lfLet (f2Mul mul (j2Y t) (j2Z t)) (fun (yz : Fp2) =>
+    lineFp12 (f2MulFe mul (f2Mul mul (f2Add yz yz) z2) (ptY p)) c1 c3)))))))
+-- lineAddBy mul p q r t2 is the line value of lineAdd with R = r and the sum
+-- t2 = t + q: c0 = Z(t2) yP, c1 = -(R xP), c3 = R xQ - yQ Z(t2).
+def lineAddBy : (Fe -> Fe -> Fe) -> Pt1 -> Pt2 -> Fp2 -> Jac2 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (p : Pt1) (q : Pt2) (r : Fp2) (t2 : Jac2) =>
+    lfLet (f2MulFe mul (j2Z t2) (ptY p)) (fun (c0 : Fp2) =>
+    lfLet (f2Neg (f2MulFe mul r (ptX p))) (fun (c1 : Fp2) =>
+    lineFp12 c0 c1 (f2Sub (f2Mul mul r (p2X q)) (f2Mul mul (p2Y q) (j2Z t2)))))
+-- lineAdd mul p q t is the chord of t and q for the G1 point p, times Z3
+-- (pairing_line_add), with R = yQ Z^3 - Y. The step to t + q is j2AddAff.
+def lineAdd : (Fe -> Fe -> Fe) -> Pt1 -> Pt2 -> Jac2 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (p : Pt1) (q : Pt2) (t : Jac2) =>
+    lineAddBy mul p q (f2Sub (f2Mul mul (p2Y q) (f2Mul mul (f2Sqr mul (j2Z t)) (j2Z t))) (j2Y t)) (j2AddAff mul t q)
+-- S8c u3b (D3b): a MilSt is the state of the Miller loop, the value msF and
+-- the point msT. milDbl mul p s is one double step: F^2 times lineDbl at T,
+-- and 2 T. milAdd mul p q s is one add step: F times lineAdd at T and q,
+-- and T + q. Each line value is from T before the step (pairing_miller).
+family MilSt := milSt (msF : Fp12) (msT : Jac2)
+def milDbl : (Fe -> Fe -> Fe) -> Pt1 -> MilSt -> MilSt :=
+  fun (mul : Fe -> Fe -> Fe) (p : Pt1) (s : MilSt) =>
+    milSt (f12Mul mul (f12Sqr mul (msF s)) (lineDbl mul p (msT s))) (j2Dbl mul (msT s))
+def milAdd : (Fe -> Fe -> Fe) -> Pt1 -> Pt2 -> MilSt -> MilSt :=
+  fun (mul : Fe -> Fe -> Fe) (p : Pt1) (q : Pt2) (s : MilSt) =>
+    milSt (f12Mul mul (msF s) (lineAdd mul p q (msT s))) (j2AddAff mul (msT s) q)
+-- milBits mul p q e s does the steps of the bits of e on s, the top bit
+-- first: a double step for each bit, then an add step for a 1 bit.
+def milBits : (Fe -> Fe -> Fe) -> Pt1 -> Pt2 -> FeBits -> MilSt -> MilSt :=
+  fun (mul : Fe -> Fe -> Fe) (p : Pt1) (q : Pt2) (e : FeBits) => elim (fun (k : FeBits) => MilSt -> MilSt)
+    (fun (s : MilSt) => s)
+    (fun (t : FeBits) (ih : MilSt -> MilSt) => fun (s : MilSt) => ih (milDbl mul p s))
+    (fun (t : FeBits) (ih : MilSt -> MilSt) => fun (s : MilSt) => ih (milAdd mul p q (milDbl mul p s))) e
+-- milTail mul p q s is the F of the 2 add steps of the tail: first with
+-- q1 = psi(q), then with q2 = -psi(q1).
+def milTail : (Fe -> Fe -> Fe) -> Pt1 -> Pt2 -> MilSt -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (p : Pt1) (q : Pt2) (s : MilSt) =>
+    msF (milAdd mul p (p2Neg (p2Psi mul (p2Psi mul q))) (milAdd mul p (p2Psi mul q) s))
+-- milBitsOf p is millerBits. It is an elim on p: the load evaluates each def
+-- below its binders, and for a variable p it stops here. Thus it does not
+-- unroll the 64 steps of milBits in miller.
+def milBitsOf : Pt1 -> FeBits := fun (p : Pt1) => elim (fun (k : Pt1) => FeBits) (fun (x : Fe) (y : Fe) => millerBits) p
+-- miller mul p q is the value of pairing_miller: f12One when p or q is the
+-- point at infinity, else milBits over millerBits from (f12One, q), then
+-- milTail.
+def miller : (Fe -> Fe -> Fe) -> Pt1 -> Pt2 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (p : Pt1) (q : Pt2) =>
+    either (fun (u : Unit) =>
+      either (fun (u1 : Unit) => milTail mul p q (milBits mul p q (milBitsOf p) (milSt f12One (p2ToJac q))))
+        (fun (u1 : Unit) => f12One)
+        (p2IsInf q))
+      (fun (u : Unit) => f12One)
+      (ptIsInf p)
+-- finEasy mul f is the value of pairing_final_easy: f^((p^6 - 1)(p^2 + 1)).
+-- With f1 = conj(f) / f, it is frob(frob(f1)) f1.
+def finEasy : (Fe -> Fe -> Fe) -> Fp12 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (f : Fp12) =>
+    f12Let (f12Mul mul (f12Conj f) (f12Inv mul f)) (fun (f1 : Fp12) => f12Mul mul (f12Frob mul (f12Frob mul f1)) f1)
+-- finHardBy mul m fx fx2 fx3 is the value of pairing_final_hard for m, with
+-- fx = m^x, fx2 = fx^x and fx3 = fx2^x. The order of the operations is the
+-- order of the C function: y0 = mp mp2 mp3, y1 = conj(m), y2 = frob(frob(fx2)),
+-- y3 = conj(frob(fx)), y4 = conj(fx frob(fx2)), y5 = conj(fx2) and
+-- y6 = conj(fx3 frob(fx3)), where mp = frob(m), mp2 = frob(mp), mp3 = frob(mp2).
+-- Then t0 = y6^2 y4 y5, t1 = ((y3 y5 t0)^2 t0 y2)^2, and the value is
+-- (t1 y1)^2 (t1 y0).
+def finHardBy : (Fe -> Fe -> Fe) -> Fp12 -> Fp12 -> Fp12 -> Fp12 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (m : Fp12) (fx : Fp12) (fx2 : Fp12) (fx3 : Fp12) =>
+    f12Let (f12Frob mul m) (fun (mp : Fp12) =>
+    f12Let (f12Frob mul mp) (fun (mp2 : Fp12) =>
+    f12Let (f12Mul mul (f12Mul mul mp mp2) (f12Frob mul mp2)) (fun (y0 : Fp12) =>
+    f12Let (f12Conj fx2) (fun (y5 : Fp12) =>
+    f12Let (f12Mul mul (f12Mul mul (f12Sqr mul (f12Conj (f12Mul mul fx3 (f12Frob mul fx3)))) (f12Conj (f12Mul mul fx (f12Frob mul fx2)))) y5) (fun (t0 : Fp12) =>
+    f12Let (f12Sqr mul (f12Mul mul (f12Sqr mul (f12Mul mul (f12Mul mul (f12Conj (f12Frob mul fx)) y5) t0)) (f12Mul mul t0 (f12Frob mul (f12Frob mul fx2))))) (fun (t1 : Fp12) =>
+    f12Mul mul (f12Sqr mul (f12Mul mul t1 (f12Conj m))) (f12Mul mul t1 y0)))))))
+-- finXBitsOf a is bnXBits. It is an elim on a: the load evaluates each def
+-- below its binders, and for a variable a it stops here. Thus it does not
+-- unroll the 64 steps of f12Pow in finHard.
+def finXBitsOf : Fp12 -> FeBits := fun (a : Fp12) => elim (fun (k : Fp12) => FeBits) (fun (b : Fp6) (c : Fp6) => bnXBits) a
+-- finHard mul m is the value of pairing_final_hard: fx = m^x, fx2 = fx^x and
+-- fx3 = fx2^x (x is bnXBits), then finHardBy.
+def finHard : (Fe -> Fe -> Fe) -> Fp12 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (m : Fp12) =>
+    f12Let (f12Pow mul m (finXBitsOf m)) (fun (fx : Fp12) =>
+    f12Let (f12Pow mul fx (finXBitsOf fx)) (fun (fx2 : Fp12) =>
+    f12Let (f12Pow mul fx2 (finXBitsOf fx2)) (fun (fx3 : Fp12) => finHardBy mul m fx fx2 fx3)))
+-- finalExp mul f is the value of pairing_final: finHard mul (finEasy mul f).
+def finalExp : (Fe -> Fe -> Fe) -> Fp12 -> Fp12 := fun (mul : Fe -> Fe -> Fe) (f : Fp12) => finHard mul (finEasy mul f)
+-- p2MulFrom mul q e t does the bits of e on t, the top bit first: it
+-- doubles t, and a 1 bit then adds q (g2_mul, the ptMulWord form).
+def p2MulFrom : (Fe -> Fe -> Fe) -> Pt2 -> FeBits -> Jac2 -> Jac2 :=
+  fun (mul : Fe -> Fe -> Fe) (q : Pt2) (e : FeBits) => elim (fun (k : FeBits) => Jac2 -> Jac2)
+    (fun (t : Jac2) => t)
+    (fun (s : FeBits) (ih : Jac2 -> Jac2) => fun (t : Jac2) => ih (j2Dbl mul t))
+    (fun (s : FeBits) (ih : Jac2 -> Jac2) => fun (t : Jac2) => ih (j2AddAff mul (j2Dbl mul t) q)) e
+-- p2XBitsOf q is bnXBits. It is an elim on q: the load evaluates each def
+-- below its binders, and for a variable q it stops here. Thus it does not
+-- unroll the 63 steps of p2MulFrom in p2MulX.
+def p2XBitsOf : Pt2 -> FeBits := fun (q : Pt2) => elim (fun (k : Pt2) => FeBits) (fun (x : Fp2) (y : Fp2) => bnXBits) q
+-- p2MulX mul q is [x] q (g2_mul with k = x): p2MulFrom over bnXBits from
+-- j2Inf, then j2ToAff.
+def p2MulX : (Fe -> Fe -> Fe) -> Pt2 -> Pt2 := fun (mul : Fe -> Fe -> Fe) (q : Pt2) => j2ToAff mul (p2MulFrom mul q (p2XBitsOf q) j2Inf)
+-- p2SubLet x k is k x (a let for the subgroup test).
+def p2SubLet : Pt2 -> (Pt2 -> Sum Unit Unit) -> Sum Unit Unit := fun (x : Pt2) (k : Pt2 -> Sum Unit Unit) => k x
+-- p2InSubBy mul q a is the test of g2_in_subgroup for a = [x] q:
+-- [x + 1] q + psi(a) + psi^2(a) = psi^3([2 x] q). With b = psi(a),
+-- a1 = a + q, c = psi(b), d = (c + b) + a1 and e = psi(c), it compares
+-- e + e with d. The order of the operations is the order of the C function.
+def p2InSubBy : (Fe -> Fe -> Fe) -> Pt2 -> Pt2 -> Sum Unit Unit :=
+  fun (mul : Fe -> Fe -> Fe) (q : Pt2) (a : Pt2) =>
+    p2SubLet (p2Psi mul a) (fun (b : Pt2) =>
+    p2SubLet (p2Add mul a q) (fun (a1 : Pt2) =>
+    p2SubLet (p2Psi mul b) (fun (c : Pt2) =>
+    p2SubLet (p2Add mul (p2Add mul c b) a1) (fun (d : Pt2) =>
+    p2SubLet (p2Psi mul c) (fun (e : Pt2) =>
+    p2Eq (p2Add mul e e) d)))))
+-- p2InSub mul q is g2_in_subgroup: q is on the curve (p2OnCurve), and
+-- p2InSubBy holds for a = [x] q.
+def p2InSub : (Fe -> Fe -> Fe) -> Pt2 -> Sum Unit Unit :=
+  fun (mul : Fe -> Fe -> Fe) (q : Pt2) => feAll (p2OnCurve mul q) (fun (u : Unit) => p2InSubBy mul q (p2MulX mul q))
+-- pairInputsOk mul l is inr unit when each P of l is on the curve
+-- (ptOnCurve) and each Q of l is in the subgroup (p2InSub). The point at
+-- infinity passes both checks, as in the C code.
+def pairInputsOk : (Fe -> Fe -> Fe) -> PairList -> Sum Unit Unit :=
+  fun (mul : Fe -> Fe -> Fe) (l : PairList) => elim (fun (k : PairList) => Sum Unit Unit) feYes
+    (fun (p : Pt1) (q : Pt2) (t : PairList) (ih : Sum Unit Unit) => feAll (ptOnCurve fpMod p) (fun (u : Unit) => feAll (p2InSub mul q) (fun (u1 : Unit) => ih))) l
+-- millerProdBy mul l f multiplies f by miller P Q for each pair of l, in
+-- list order (the loop of pairing_check). millerProd mul l starts at f12One.
+def millerProdBy : (Fe -> Fe -> Fe) -> PairList -> Fp12 -> Fp12 :=
+  fun (mul : Fe -> Fe -> Fe) (l : PairList) => elim (fun (k : PairList) => Fp12 -> Fp12)
+    (fun (f : Fp12) => f)
+    (fun (p : Pt1) (q : Pt2) (t : PairList) (ih : Fp12 -> Fp12) => fun (f : Fp12) => ih (f12Mul mul f (miller mul p q))) l
+def millerProd : (Fe -> Fe -> Fe) -> PairList -> Fp12 := fun (mul : Fe -> Fe -> Fe) (l : PairList) => millerProdBy mul l f12One
+-- f12IsOne a is inr unit when a is f12One (fp12_is_one).
+def f12IsOne : Fp12 -> Sum Unit Unit := fun (a : Fp12) => f12Eq a f12One
+-- pairExpOf l is finalExp. It is an elim on l: the load evaluates each def
+-- below its binders, and for a variable l it stops here. Thus it does not
+-- unroll the 3 f12Pow passes of finHard in pairingCheck.
+def pairExpOf : PairList -> (Fe -> Fe -> Fe) -> Fp12 -> Fp12 :=
+  fun (l : PairList) => elim (fun (k : PairList) => (Fe -> Fe -> Fe) -> Fp12 -> Fp12) finalExp
+    (fun (p : Pt1) (q : Pt2) (t : PairList) (ih : (Fe -> Fe -> Fe) -> Fp12 -> Fp12) => finalExp) l
+-- pairingCheck mul l is pairing_check with the input checks first: inl unit
+-- when an input check fails (no Miller loop and no final power), else
+-- f12IsOne of the final power (pairExpOf l) of millerProd.
+def pairingCheck : (Fe -> Fe -> Fe) -> PairList -> Sum Unit Unit :=
+  fun (mul : Fe -> Fe -> Fe) (l : PairList) =>
+    either (fun (u : Unit) => feNo) (fun (u : Unit) => f12IsOne (pairExpOf l mul (millerProd mul l))) (pairInputsOk mul l)
 -- The token and the nullifier: one constructor over Nat each. tkEq and
 -- nfEq are the equality words (inr unit is "equal").
 family Token := token (tokId : Nat)

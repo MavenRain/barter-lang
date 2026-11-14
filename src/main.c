@@ -11,7 +11,7 @@
 #include "front/lower.h"
 #include "target.h"
 
-#define ARENA_LIMIT_BYTES ((size_t)1 << 30)
+#define ARENA_LIMIT_BYTES ((size_t)1 << 31) /* 1 << 30 before S8c u3b (Q-S8c-12 (a)): the u3b domain load adds 65 MB to each row; fpPtGuest rows 5 and 6 take 1.11 GB */
 
 typedef enum {
   CMD_CHECK,

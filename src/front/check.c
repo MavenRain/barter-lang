@@ -113,6 +113,7 @@ typedef enum {
   RULE_PT_MULC, /* S8b2: ptMulC, the C G1 scalar product (Q-S8b2-1 (a)) */
   RULE_POSEIDON2C, /* S8b2: poseidon2C, the C Poseidon hash (Q-S8b2-30 (a)) */
   RULE_SCHNORRCHECKC, /* S8b2: schnorrCheckC, the C Schnorr check (Q-S8b2-36 (a)) */
+  RULE_PAIRINGCHECKC, /* pairingCheckC, the C pairing check */
   RULE_LEN, /* S3: len A r (survey section 7) */
   RULE_FLAG_IF,
   RULE_NONZERO,       /* S3: NonZero Nat */
@@ -223,6 +224,7 @@ static const Builtin BUILTINS[] = {
   {"ptMulC", 3, RULE_PT_MULC, OP_PT_MULC, OP_NAT, 0, VIS_WORD},
   {"poseidon2C", 2, RULE_POSEIDON2C, OP_POSEIDON2C, OP_NAT, 0, VIS_WORD},
   {"schnorrCheckC", 4, RULE_SCHNORRCHECKC, OP_SCHNORRCHECKC, OP_NAT, 0, VIS_WORD},
+  {"pairingCheckC", 1, RULE_PAIRINGCHECKC, OP_PAIRINGCHECKC, OP_NAT, 0, VIS_WORD},
 };
 
 #define BUILTIN_COUNT ((uint32_t)(sizeof BUILTINS / sizeof BUILTINS[0]))
@@ -2296,6 +2298,24 @@ static const Core *rule_schnorr_checkc(Call *k) {
              : core_op(c, OP_SCHNORRCHECKC, 0, 0, args, 4);
 }
 
+/* pairingCheckC l, l : PairList of domain.lang. The result type is the type
+   of a wLt result (Sum Unit Unit), as the guest pairingCheck. */
+static const Core *rule_pairing_checkc(Call *k) {
+  Checker *c = k->c;
+  uint32_t fe = find_family(c->m, "Fe");
+  uint32_t pl = find_family(c->m, "PairList");
+  const Core *args[1];
+  const Value *tf;
+  const Value *tl;
+  if (fe >= c->m->family_count || pl >= c->m->family_count)
+    return NULL;
+  tf = val_op(c->m, VAL_OP, OP_FAMILY, fe, 0, NULL, 0);
+  tl = val_op(c->m, VAL_OP, OP_FAMILY, pl, 0, NULL, 0);
+  args[0] = check(c, k->args[0], tl);
+  k->type = prim_result(c, OP_SUM, tf);
+  return args[0] == NULL ? NULL : core_op(c, OP_PAIRINGCHECKC, 0, 0, args, 1);
+}
+
 /* Fin n: n : Nat, Fin n : Type 0. */
 static const Core *rule_fin(Call *k) {
   const Core *n = check(k->c, k->args[0], nat_type(k->c));
@@ -2501,6 +2521,8 @@ static const Core *rule(Call *k) {
     return rule_poseidon2c(k);
   case RULE_SCHNORRCHECKC:
     return rule_schnorr_checkc(k);
+  case RULE_PAIRINGCHECKC:
+    return rule_pairing_checkc(k);
   case RULE_WORD2:
     return rule_prim(k, OP_WORD);
   case RULE_LEN:
@@ -2878,6 +2900,23 @@ static const Core *eta(Checker *c, const Term *whole, const Value *hint, const V
   return check_lam(c, lam, hint, type);
 }
 
+/* 1 when K has a CORE_VAR with index >= D. */
+static int core_uses(const Core *k, uint32_t d) {
+  uint32_t i;
+  uint32_t under;
+  if (k == NULL)
+    return 0;
+  if (k->kind == CORE_VAR)
+    return k->index >= d;
+  under = (k->kind == CORE_LAM || k->kind == CORE_PI || k->kind == CORE_SIGMA || k->kind == CORE_PLAM || k->kind == CORE_PATHP) ? 1u : 0u;
+  if (core_uses(k->a, d) || core_uses(k->b, d + under))
+    return 1;
+  for (i = 0; i < k->argc; i++)
+    if (core_uses(k->args[i], d))
+      return 1;
+  return 0;
+}
+
 /* Applies K of type TY to ARGS, one by one. */
 static const Core *apply_rest(Checker *c, const Core *k, const Value *ty, const Term *const *args, uint32_t argc, const Value *hint, const Value **type) {
   uint32_t i;
@@ -2886,7 +2925,7 @@ static const Core *apply_rest(Checker *c, const Core *k, const Value *ty, const 
     if (ty == NULL || ty->kind != VAL_PI)
       return nul(FAIL(c, "TYPE_NOT_FUNCTION", "a term of type %s is applied to an argument", show(c, ty)));
     a = check(c, args[i], ty->dom);
-    ty = closure_apply(c->m, ty, here(c, a));
+    ty = closure_apply(c->m, ty, a == NULL ? NULL : (ty->tag == CLOS_CORE && (ty->body == NULL || !core_uses(ty->body, 0))) ? val_var(c->m, c->level) : here(c, a));
     k = core_app(c, k, a);
   }
   *type = ty;

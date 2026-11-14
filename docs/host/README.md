@@ -176,23 +176,27 @@ how to replace the sample domain.
 |---|---|
 | `examples: 37 checked, 0 failed` | `langc check` accepts each `examples/*.lang` file (`--kit` for each file of `examples/kit.txt`) |
 | `parse refusals: 19 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
-| `check refusals: 205 checked` | each `test/check` file fails with the code in `test/check/expect.txt`; the `PATH_END` message shows both normal forms |
+| `check refusals: 206 checked` | each `test/check` file fails with the code in `test/check/expect.txt`; the `PATH_END` message shows both normal forms |
 | `kit-only refusals: 10 checked` | each `REFUSE_KIT` row refuses a kit item in guest mode only: `langc --kit check` accepts the file |
 | `time hint: 1 checked` | a `REFUSE_TIME` refusal names the op-count form (`len r`, an `OpPos`) |
 | `kernel suffix: 1 checked` | the text line of a mapped code ends with the kernel code: `test/check/read-amount.lang` gives `REFUSE_DIV` and `(kernel REFUSE_READ)` |
-| `json refusals: 224 checked` | `langc check --json` exits 1 for each row of `test/parse/expect.txt` and `test/check/expect.txt`: the code and a hint are on stdout, and stderr is empty |
+| `json refusals: 225 checked` | `langc check --json` exits 1 for each row of `test/parse/expect.txt` and `test/check/expect.txt`: the code and a hint are on stdout, and stderr is empty |
 | `json lines: 5 checked` | for each line of `test/json/expect.txt`, `langc check --json` gives the exit code of the line and the stdout of its `test/json` file; `check --json` with no file and with a file that does not exist exits 2 with no JSON |
 | `fmt idempotent: 38 checked` | for `domain/domain.lang` and each example, the `fmt` text is canonical: `fmt` of that text gives the same text, and `fmt --check` exits 0 with no output |
 | `fmt not canonical: 1 checked` | `fmt --check` refuses `test/fmt/check.lang` at line 3 |
 | `fmt usage: 1 checked` | an unknown `fmt` argument is a usage error (exit 2) |
 | `evals: 181 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
-| `crypto oracle: 506 rows, 0 mismatches` | `build/cryptotool` (`test/cryptotool.c`) prints one row for each oracle value: a kit file, a def, its arguments and the result. `langc --kit eval` gives the result of each row |
+| `crypto oracle: 600 rows, 0 mismatches` | `build/cryptotool` (`test/cryptotool.c`) prints one row for each oracle value: a kit file, a def, its arguments and the result. `langc --kit eval` gives the result of each row |
+| `pairing fuel: prPccFuel exit 1, EVAL_FUEL` | on the arguments of the first `prPcc0` row, `langc --kit eval test/crypto/pairing.lang prPccFuel` (14 pairs) exits 1 with `EVAL_FUEL`: the check of the file uses 2169939 of the 40000000 steps, thus one call of `pairingCheckC` can then do 12 pairs at most |
 | `poseidon constants: 76 lines, same as domain/domain.lang` | the print of `build/poseidongen` is the lines of `domain/domain.lang` from `def psM00` to the last line of `psAll` |
 | `poseidon2C table: 228 lines, same as src/front/poseidon_c.h` | the print of `build/poseidongen c` is `src/front/poseidon_c.h` |
+| `pairing constants: 9 lines, same as domain/domain.lang` | the print of `build/pairinggen` is the lines of `domain/domain.lang` from `def frobG1` to `def bnXBits` |
+| `pairingCheckC table: 28 lines, same as src/front/pairing_c.h` | the print of `build/pairinggen c` is `src/front/pairing_c.h` |
 | `fixtures: 40 lines, same as domain/domain.lang` | the print of `build/cryptotool fixtures` is the lines of `domain/domain.lang` from `-- @FIX@ begin` to `-- @FIX@ end` |
+| `pairing fixtures: 35 lines, same as test/crypto/pairing.lang` | the print of `build/cryptotool pairing-fixtures` is the lines of `test/crypto/pairing.lang` from `-- @PFIX@ begin` to `-- @PFIX@ end` |
 | `builds: 1 checked` | `langc --kit build examples/functions.lang -o OUT` writes a module that `wasm-validate` accepts |
 | `ir: 37 lowered` | `langc ir` lowers each `examples/*.lang` file (`--kit` for each file of `examples/kit.txt`) and gives one `func` line for each `abi` line; `examples/functions.lang` has at least one entry |
-| `ir refusals: 9 checked` | `langc --kit check` accepts and `langc --kit ir` refuses `test/ir/closure.lang`, `kmap.lang`, `tree.lang`, `spine.lang`, `lazy.lang`, `hop.lang`, `ptmulc.lang`, `p2c.lang` and `scc.lang`, each with its code |
+| `ir refusals: 10 checked` | `langc --kit check` accepts and `langc --kit ir` refuses `test/ir/closure.lang`, `kmap.lang`, `tree.lang`, `spine.lang`, `lazy.lang`, `hop.lang`, `ptmulc.lang`, `p2c.lang`, `scc.lang` and `pcc.lang`, each with its code |
 | `ir lowerings: 2 lowered` | the `langc --kit ir` text of `test/ir/natops.lang` and `test/ir/block.lang` is `test/ir/natops.ir` and `test/ir/block.ir` |
 | `notrap modules: 4 checked` | `langc build` writes the modules of `test/ir/natops.lang`, `test/ir/block.lang` and `examples/state-no-history.lang`, and `wasm-validate` accepts each one. `build/notraptool` (`test/notraptool.c`) accepts these three modules and the module of `examples/functions.lang`: no `unreachable`, no `memory.grow`, only the opcodes of `src/wasmop.h`, a divisor guard before each `i64.div_u` and `i64.rem_u`, and memory 0 with maximum = minimum. `build` lowers the `state` family of `examples/state-no-history.lang` as a plain family |
 | `notrap bad rows: 7 checked` | `build/notraptool` refuses each module of `test/notrap/bad/` (`wat2wasm` makes it from its `.wat` file): exit 1 and the message of its line in `test/notrap/bad/expect.txt`. The 7 modules have `unreachable`, `memory.grow`, an `i64.div_u` and an `i64.rem_u` with no guard, a memory maximum above the minimum, a memory with no maximum, and `i32.add` (an opcode that is not in `src/wasmop.h`) |
@@ -224,11 +228,11 @@ module's IR; node and `langc eval` must agree on every result.
   declared type.
 - A definition with a `List`, `Prod` or other non-scalar result is not an
   entry. `ir` and `abi` skip it.
-- `langc eval` stops after 20000000 steps (`EVAL_FUEL`). The Wasm module
+- `langc eval` stops after 40000000 steps (`EVAL_FUEL`). The Wasm module
   has no step limit, so a large loop count can run on Wasm and stop in
   `eval`. The grid of `test/grid.awk` uses large values only for
   entries with no loop.
-- The arena of `langc` stops at 1 GiB. The Wasm memory has a fixed size:
+- The arena of `langc` stops at 2 GiB. The Wasm memory has a fixed size:
   minimum = maximum = the pages of the largest heap bound of an entry, at
   least 1 page. An entry with no static heap bound refuses
   (`REFUSE_LOWER`, `test/ir/spine.lang`).

@@ -1,0 +1,1 @@
+def bad : PairList -> Sum Unit Unit := fun (l : PairList) => pairingCheckC l
